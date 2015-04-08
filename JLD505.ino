@@ -38,23 +38,31 @@ byte Command = 0; // "z" will reset the AmpHours and KiloWattHours counters
 volatile uint8_t bStartConversion = 0;
 volatile uint8_t bGetTemperature = 0;
 volatile uint8_t timerIntCounter = 0;
+volatile uint8_t timerFastCounter  = 0;
 volatile uint8_t sensorReadPosition = 255;
+uint8_t tempSensorCount = 0;
 
 void oneWireInt()
 {
-	timerIntCounter++;
-	if (timerIntCounter < 10) 
+	timerFastCounter++;
+	if (timerFastCounter == 4)
 	{
-		bGetTemperature = 1;
-		sensorReadPosition++;
-	}
-	if (timerIntCounter == 10)
-	{
-		bStartConversion = 1;
-	}
-	if (timerIntCounter == 18)
-	{
-		timerIntCounter = 0;
+		timerFastCounter = 0;
+		timerIntCounter++;
+		if (timerIntCounter < 10)
+		{
+			bGetTemperature = 1;
+			sensorReadPosition++;
+		}
+		if (timerIntCounter == 10)
+		{
+			bStartConversion = 1;
+			sensorReadPosition = 255;
+		}
+		if (timerIntCounter == 18)
+		{
+			timerIntCounter = 0;
+		}
 	}
 }
   
@@ -72,11 +80,17 @@ void setup()
   EEPROM_readAnything(ADDR_KiloWattHours, KiloWattHours);
   EEPROM_readAnything(ADDR_VoltageCalibration, VoltageCalibration);
   attachInterrupt(0, Save, FALLING);
-  FrequencyTimer2::setPeriod(100); //interrupt every 100ms
+  FrequencyTimer2::setPeriod(25000); //interrupt every 25ms
   FrequencyTimer2::setOnOverflow(oneWireInt);
+	
+  Serial.print("Found ");
+  tempSensorCount = sensors.getDeviceCount(); 
+  Serial.print(tempSensorCount);
+  Serial.println(" temperature sensors.");
 }
 void loop()
 {
+  uint8_t pos;
   CurrentMillis = millis();
  
   if(CurrentMillis - PreviousMillis >= Interval)
@@ -108,11 +122,14 @@ void loop()
   if (bGetTemperature)
   {
 	  bGetTemperature = 0;
-	  if (sensorReadPosition < sensors.getDeviceCount())
+	  pos = sensorReadPosition;
+	  if (pos < tempSensorCount)
 	  {
-		  //sensors.isConnected(sensorReadPosition);
-		  //Serial.println(sensors.getCelsius(sensorReadPosition));
-		  Serial.println(sensors.getTempCByIndex(sensorReadPosition));
+		  //sensors.isConnected(pos);
+		  Serial.print(pos);
+		  Serial.print(": ");
+		  //Serial.println(sensors.getCelsius(pos));
+		  Serial.println(sensors.getTempCByIndex(pos));
           }
   }
 }
@@ -160,6 +177,7 @@ void USB()
 
 void BT()
 {
+	
   BTSerial.print (Voltage, 2);   
   BTSerial.print ("V ");
   BTSerial.print (Current, 2);    
@@ -170,6 +188,7 @@ void BT()
   BTSerial.print ("kW ");
   BTSerial.print (KiloWattHours, 1);    
   BTSerial.println ("kWh");
+	
   /*
   BTSerial.write(02);
   BTSerial.write(highByte((int)(Voltage*10)));  
@@ -183,12 +202,14 @@ void BT()
   BTSerial.write(highByte((int)(KiloWattHours*10)));    
   BTSerial.write(lowByte((int)(KiloWattHours*10)));
   BTSerial.write(03);*/
+  
   if (BTSerial.available() > 0)
   {Command = BTSerial.read();
    if (Command == 'z')
    {AmpHours = 0;
     KiloWattHours = 0;}
    while(BTSerial.available()>0) BTSerial.read();}
+   
 }
 
 void CANBUS()
