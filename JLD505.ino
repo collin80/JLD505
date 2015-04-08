@@ -5,8 +5,17 @@
 #include <INA226.h>
 #include <EEPROMAnything.h>
 #include <SoftwareSerial.h>
+#include <AltSoftSerial.h>
+#include <DS2480B.h>
+#include <DallasTemperature.h>
+#include <FrequencyTimer2.h>
 
 SoftwareSerial BTSerial(A2, A1); // RX | TX
+AltSoftSerial altSerial; //pins 8 and 9
+
+DS2480B ds(altSerial);
+DallasTemperature sensors(&ds);
+
 INA226 ina;
 int ADDR_AmpHours = 0;
 int ADDR_KiloWattHours = 10;
@@ -26,12 +35,36 @@ int Count = 0;
 int canMsgID  = 0x000;
 unsigned char canMsg[8] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 byte Command = 0; // "z" will reset the AmpHours and KiloWattHours counters
+volatile uint8_t bStartConversion = 0;
+volatile uint8_t bGetTemperature = 0;
+volatile uint8_t timerIntCounter = 0;
+volatile uint8_t sensorReadPosition = 255;
 
+void oneWireInt()
+{
+	timerIntCounter++;
+	if (timerIntCounter < 10) 
+	{
+		bGetTemperature = 1;
+		sensorReadPosition++;
+	}
+	if (timerIntCounter == 10)
+	{
+		bStartConversion = 1;
+	}
+	if (timerIntCounter == 18)
+	{
+		timerIntCounter = 0;
+	}
+}
   
 void setup()
 {  
   Serial.begin(115200);
   BTSerial.begin(38400);
+  altSerial.begin(9600);
+  sensors.begin();
+  sensors.setWaitForConversion(false); //we're handling the time delay ourselves so no need to wait when asking for temperatures
   CAN.begin(CAN_500KBPS);
   ina.begin(69);
   ina.configure(INA226_AVERAGES_16, INA226_BUS_CONV_TIME_1100US, INA226_SHUNT_CONV_TIME_1100US, INA226_MODE_SHUNT_BUS_CONT);
@@ -39,7 +72,8 @@ void setup()
   EEPROM_readAnything(ADDR_KiloWattHours, KiloWattHours);
   EEPROM_readAnything(ADDR_VoltageCalibration, VoltageCalibration);
   attachInterrupt(0, Save, FALLING);
-
+  FrequencyTimer2::setPeriod(100); //interrupt every 100ms
+  FrequencyTimer2::setOnOverflow(oneWireInt);
 }
 void loop()
 {
@@ -64,6 +98,22 @@ void loop()
      CANBUS();
      Save();
      }
+  }
+  
+  if (bStartConversion == 1)
+  {
+	  bStartConversion = 0;
+	  sensors.requestTemperatures();
+  }
+  if (bGetTemperature)
+  {
+	  bGetTemperature = 0;
+	  if (sensorReadPosition < sensors.getDeviceCount())
+	  {
+		  //sensors.isConnected(sensorReadPosition);
+		  //Serial.println(sensors.getCelsius(sensorReadPosition));
+		  Serial.println(sensors.getTempCByIndex(sensorReadPosition));
+          }
   }
 }
 
