@@ -1,7 +1,7 @@
 #include <SPI.h>
 #include <Wire.h>
 #include <EEPROM.h>
-#include <mcp_can.h>
+#include <MCP2515.h>
 #include <INA226.h>
 #include <EEPROMAnything.h>
 #include <SoftwareSerial.h>
@@ -12,6 +12,9 @@
 
 SoftwareSerial BTSerial(A2, A1); // RX | TX
 AltSoftSerial altSerial; //pins 8 and 9
+
+           //CS, RESET, INT
+MCP2515 CAN(10, 9, 3); //there is no controllable reset pin but I set it to 9 because I believe D9 to be unused.
 
 DS2480B ds(altSerial);
 DallasTemperature sensors(&ds);
@@ -101,6 +104,10 @@ CHADEMOSTATE chademoState = STOPPED;
 #define EVSE_STATUS_BATTERR		16 //something wrong with battery?!
 #define EVSE_STATUS_STOPPED		32 //charger is stopped
 
+void CANHandler() {
+	CAN.intHandler();
+}
+
 void timer2Int()
 {
 	timerFastCounter++;
@@ -129,33 +136,47 @@ void timer2Int()
 void setup()
 { 
 //first thing configure the I/O pins and set them to a sane state
-  pinMode(IN0, INPUT);
-  pinMode(IN1, INPUT);
-  pinMode(OUT0, OUTPUT);
-  pinMode(OUT1, OUTPUT);
-  digitalWrite(OUT0, LOW);
-  digitalWrite(OUT1, LOW);
+	pinMode(IN0, INPUT);
+	pinMode(IN1, INPUT);
+	pinMode(OUT0, OUTPUT);
+	pinMode(OUT1, OUTPUT);
+	digitalWrite(OUT0, LOW);
+	digitalWrite(OUT1, LOW);
 
-  Serial.begin(115200);
-  BTSerial.begin(38400);
-  altSerial.begin(9600);
-  sensors.begin();
-  sensors.setWaitForConversion(false); //we're handling the time delay ourselves so no need to wait when asking for temperatures
-  CAN.begin(CAN_500KBPS);
-  ina.begin(69);
-  ina.configure(INA226_AVERAGES_16, INA226_BUS_CONV_TIME_1100US, INA226_SHUNT_CONV_TIME_1100US, INA226_MODE_SHUNT_BUS_CONT);
-  EEPROM_readAnything(ADDR_AmpHours, AmpHours);
-  EEPROM_readAnything(ADDR_KiloWattHours, KiloWattHours);
-  EEPROM_readAnything(ADDR_VoltageCalibration, VoltageCalibration);
-  attachInterrupt(0, Save, FALLING);
-  FrequencyTimer2::setPeriod(25000); //interrupt every 25ms
-  FrequencyTimer2::setOnOverflow(timer2Int);
+	//set up SPI so we can use the MCP2515 module
+  	SPI.setClockDivider(SPI_CLOCK_DIV2);
+	SPI.setDataMode(SPI_MODE0);
+	SPI.setBitOrder(MSBFIRST);
+	SPI.begin();
+
+	Serial.begin(115200);
+	BTSerial.begin(38400);
+	altSerial.begin(9600);
 	
-  Serial.print("Found ");
-  tempSensorCount = sensors.getDeviceCount(); 
-  Serial.print(tempSensorCount);
-  Serial.println(" temperature sensors.");
+	sensors.begin();
+	sensors.setWaitForConversion(false); //we're handling the time delay ourselves so no need to wait when asking for temperatures
+  
+	CAN.Init(250, 16);
+	CAN.InitFilters(false);
+	CAN.SetRXMask(MASK0, 0x7F0, 0); //match all but bottom four bits
+	CAN.SetRXFilter(FILTER0, 0x100, 0); //allows 0x100 - 0x10F which is perfect for CHADEMO
+	attachInterrupt(1, CANHandler, FALLING); //interrupt 1 on this chip is pin 3 which is properly hooked up
+
+	ina.begin(69);
+	ina.configure(INA226_AVERAGES_16, INA226_BUS_CONV_TIME_1100US, INA226_SHUNT_CONV_TIME_1100US, INA226_MODE_SHUNT_BUS_CONT);
+	EEPROM_readAnything(ADDR_AmpHours, AmpHours);
+	EEPROM_readAnything(ADDR_KiloWattHours, KiloWattHours);
+	EEPROM_readAnything(ADDR_VoltageCalibration, VoltageCalibration);
+	attachInterrupt(0, Save, FALLING);
+	FrequencyTimer2::setPeriod(25000); //interrupt every 25ms
+	FrequencyTimer2::setOnOverflow(timer2Int);
+	
+	Serial.print("Found ");
+	tempSensorCount = sensors.getDeviceCount(); 
+	Serial.print(tempSensorCount);
+	Serial.println(" temperature sensors.");
 }
+
 void loop()
 {
 	uint8_t pos;
@@ -237,7 +258,7 @@ void loop()
 			chademoState = WAIT_FOR_BEGIN_CONFIRMATION;
 			break;
 		case WAIT_FOR_BEGIN_CONFIRMATION:
-			if (!digitalRead(IN0))
+			if (digitalRead(IN0)) //inverse logic from how IN1 works. Be careful!
 			{
 				chademoState = CLOSE_CONTACTORS;
 			}
@@ -347,67 +368,81 @@ void BT()
 
 void CANBUS()
 {
-  canMsgID  = 0x404;
-  canMsg[0] = highByte((int)(Voltage*10)); // Voltage High Byte
-  canMsg[1] = lowByte((int)(Voltage*10)); // Voltage Low Byte
-  canMsg[2] = highByte((int)(Current*10)); // Current High Byte
-  canMsg[3] = lowByte((int)(Current*10)); // Current Low Byte
-  canMsg[4] = highByte((int)(AmpHours*10)); // AmpHours High Byte
-  canMsg[5] = lowByte((int)(AmpHours*10)); // AmpHours Low Byte
-  canMsg[6] = 0x00; // Not Used
-  canMsg[7] = 0x00; // Not Used
-  CAN.sendMsgBuf(canMsgID, 0, 6, canMsg);
+	Frame outputFrame;
+	outputFrame.id = 0x404;
+	outputFrame.dlc = 6;
+	outputFrame.ide = 0;
+	outputFrame.data[0] = highByte((int)(Voltage*10)); // Voltage High Byte
+	outputFrame.data[1] = lowByte((int)(Voltage*10)); // Voltage Low Byte
+	outputFrame.data[2] = highByte((int)(Current*10)); // Current High Byte
+	outputFrame.data[3] = lowByte((int)(Current*10)); // Current Low Byte
+	outputFrame.data[4] = highByte((int)(AmpHours*10)); // AmpHours High Byte
+	outputFrame.data[5] = lowByte((int)(AmpHours*10)); // AmpHours Low Byte
+	outputFrame.data[6] = 0x00; // Not Used
+	outputFrame.data[7] = 0x00; // Not Used
+	CAN.EnqueueTX(outputFrame);
+	
   
-  canMsgID  = 0x505;
-  canMsg[0] = highByte((int)(Power*10)); // Power High Byte
-  canMsg[1] = lowByte((int)(Power*10)); // Power Low Byte
-  canMsg[2] = highByte((int)(KiloWattHours*10)); // KiloWattHours High Byte
-  canMsg[3] = lowByte((int)(KiloWattHours*10)); // KiloWattHours Low Byte
-  canMsg[4] = 0x00; // Not Used
-  canMsg[5] = 0x00; // Not Used
-  canMsg[6] = 0x00; // Not Used
-  canMsg[7] = 0x00; // Not Used
-  CAN.sendMsgBuf(canMsgID, 0, 4, canMsg);
+	outputFrame.id = 0x505;
+	outputFrame.dlc = 4;
+	outputFrame.data[0] = highByte((int)(Power*10)); // Power High Byte
+	outputFrame.data[1] = lowByte((int)(Power*10)); // Power Low Byte
+	outputFrame.data[2] = highByte((int)(KiloWattHours*10)); // KiloWattHours High Byte
+	outputFrame.data[3] = lowByte((int)(KiloWattHours*10)); // KiloWattHours Low Byte
+	outputFrame.data[4] = 0x00; // Not Used
+	outputFrame.data[5] = 0x00; // Not Used
+	outputFrame.data[6] = 0x00; // Not Used
+	outputFrame.data[7] = 0x00; // Not Used
+	CAN.EnqueueTX(outputFrame);
  }
 
 void sendChademoBattSpecs()
 {
-	canMsgID  = CARSIDE_BATT;
-	canMsg[0] = 0x00; // Not Used
-	canMsg[1] = 0x00; // Not Used
-	canMsg[2] = 0x00; // Not Used
-	canMsg[3] = 0x00; // Not Used
-	canMsg[4] = lowByte(maxVoltage);
-	canMsg[5] = highByte(maxVoltage); 
-	canMsg[6] = packSize;
-	canMsg[7] = 0; //not used
-	CAN.sendMsgBuf(canMsgID, 0, 8, canMsg);
+	Frame outputFrame;
+	outputFrame.id = CARSIDE_BATT;
+	outputFrame.dlc = 8;
+	outputFrame.ide = 0;
+	outputFrame.data[0] = 0x00; // Not Used
+	outputFrame.data[1] = 0x00; // Not Used
+	outputFrame.data[2] = 0x00; // Not Used
+	outputFrame.data[3] = 0x00; // Not Used
+	outputFrame.data[4] = lowByte(maxVoltage);
+	outputFrame.data[5] = highByte(maxVoltage); 
+	outputFrame.data[6] = packSize;
+	outputFrame.data[7] = 0; //not used
+	CAN.EnqueueTX(outputFrame);
 }
 
 void sendChademoChargingTime()
 {
-	canMsgID  = CARSIDE_CHARGETIME;
-	canMsg[0] = 0x00; // Not Used
-	canMsg[1] = 0xFF; //not using 10 second increment mode
-	canMsg[2] = 10; //ask for a 10 minute charge - for safety since this is still a test
-	canMsg[3] = 10; //how long we think the charge will take. Also 10 minutes for safety
-	canMsg[4] = 0; //not used
-	canMsg[5] = 0; //not used
-	canMsg[6] = 0; //not used
-	canMsg[7] = 0; //not used
-	CAN.sendMsgBuf(canMsgID, 0, 8, canMsg);
+	Frame outputFrame;
+	outputFrame.id = CARSIDE_CHARGETIME;
+	outputFrame.dlc = 8;
+	outputFrame.ide = 0;
+	outputFrame.data[0] = 0x00; // Not Used
+	outputFrame.data[1] = 0xFF; //not using 10 second increment mode
+	outputFrame.data[2] = 10; //ask for a 10 minute charge - for safety since this is still a test
+	outputFrame.data[3] = 10; //how long we think the charge will take. Also 10 minutes for safety
+	outputFrame.data[4] = 0; //not used
+	outputFrame.data[5] = 0; //not used
+	outputFrame.data[6] = 0; //not used
+	outputFrame.data[7] = 0; //not used
+	CAN.EnqueueTX(outputFrame);
 }
 
 void sendChademoStatus()
 {
-	canMsgID  = CARSIDE_CONTROL;
-	canMsg[0] = 0; //claim to only support the chademo 0.9 protocol. It's safer/easier that way
-	canMsg[1] = lowByte(targetVoltage);
-	canMsg[2] = highByte(targetVoltage);
-	canMsg[3] = targetAmperage;
-	canMsg[4] = 0; //hard code claim to have no faults. Is that smart? Probably not.
-	canMsg[5] = 1; //enable charging, say we're in park, we have no faults, the contactor is shut, and we want to charge
-	canMsg[6] = packSize / 2; //always claim that the battery is at 50% charge. Also not particularly bright but probably OK for early testing
-	canMsg[7] = 0; //not used
-	CAN.sendMsgBuf(canMsgID, 0, 8, canMsg);
+	Frame outputFrame;
+	outputFrame.id = CARSIDE_CONTROL;
+	outputFrame.dlc = 8;
+	outputFrame.ide = 0;
+	outputFrame.data[0] = 0; //claim to only support the chademo 0.9 protocol. It's safer/easier that way
+	outputFrame.data[1] = lowByte(targetVoltage);
+	outputFrame.data[2] = highByte(targetVoltage);
+	outputFrame.data[3] = targetAmperage;
+	outputFrame.data[4] = 0; //hard code claim to have no faults. Is that smart? Probably not.
+	outputFrame.data[5] = 1; //enable charging, say we're in park, we have no faults, the contactor is shut, and we want to charge
+	outputFrame.data[6] = packSize / 2; //always claim that the battery is at 50% charge. Also not particularly bright but probably OK for early testing
+	outputFrame.data[7] = 0; //not used
+	CAN.EnqueueTX(outputFrame);
 }
