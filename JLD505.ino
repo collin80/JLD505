@@ -16,6 +16,12 @@ AltSoftSerial altSerial; //pins 8 and 9
 DS2480B ds(altSerial);
 DallasTemperature sensors(&ds);
 
+//set the proper digital pins for these
+#define IN0		4
+#define IN1		7
+#define OUT0	5
+#define OUT1	6
+
 INA226 ina;
 int ADDR_AmpHours = 0;
 int ADDR_KiloWattHours = 10;
@@ -42,11 +48,65 @@ volatile uint8_t timerFastCounter  = 0;
 volatile uint8_t sensorReadPosition = 255;
 uint8_t tempSensorCount = 0;
 
-void oneWireInt()
+//Bunch o' chademo related stuff. 
+uint8_t bChademoMode = 0; //accessed but not modified in ISR so it should be OK non-volatile
+uint8_t bChademoSendRequests = 0; //should we be sending periodic status updates?
+volatile uint8_t bChademoRequest = 0;  //is it time to send one of those updates?
+//target values are what we send with periodic frames and can be changed.
+uint16_t targetVoltage = 375; //in 1V increments so literally the voltage we want to target
+uint8_t targetAmperage = 50; //amperage to ask for
+//Maximums are probably sent only once (in start up handshake) and set the upper limits so nothing dumb happens.
+uint16_t maxVoltage = 400; //voltage to never exceed no matter what
+uint8_t maxAmps = 100; //how many amps to be limited to
+uint8_t packSize = 80; //how many kwh in tenths. Not used for anything other than display. Somewhat meaningless
+enum CHADEMOSTATE 
+{
+	STARTUP,
+	SEND_INITIAL_PARAMS,
+	WAIT_FOR_EVSE_PARAMS,
+	SET_CHARGE_BEGIN,
+	WAIT_FOR_BEGIN_CONFIRMATION,
+	CLOSE_CONTACTORS,
+	RUNNING,
+	FAULTED,
+	STOPPED
+};
+CHADEMOSTATE chademoState = STOPPED;
+
+//The IDs for chademo comm - both carside and EVSE side so we know what to listen for
+//as well.
+#define CARSIDE_BATT		0x100
+#define CARSIDE_CHARGETIME	0x101
+#define CARSIDE_CONTROL		0x102
+
+#define EVSE_PARAMS			0x108
+#define EVSE_STATUS			0x109
+
+#define CARSIDE_FAULT_OVERV		1 //over voltage
+#define CARSIDE_FAULT_UNDERV	2 //Under voltage
+#define CARSIDE_FAULT_CURR		4 //current mismatch
+#define CARSIDE_FAULT_OVERT		8 //over temperature
+#define CARSIDE_FAULT_VOLTM		16 //voltage mismatch
+
+#define CARSIDE_STATUS_CHARGE	1 //charging enabled
+#define CARSIDE_STATUS_NOTPARK	2 //shifter not in safe state
+#define CARSIDE_STATUS_MALFUN	4 //vehicle did something dumb
+#define CARSIDE_STATUS_CONTOP	8 //main contactor open
+#define CARSIDE_STATUS_CHSTOP	16 //charger stop before even charging
+
+#define EVSE_STATUS_CHARGE		1 //charger is active
+#define EVSE_STATUS_ERR		2 //something went wrong
+#define EVSE_STATUS_CONNLOCK	4 //connector is currently locked
+#define EVSE_STATUS_INCOMPAT	8 //parameters between vehicle and charger not compatible
+#define EVSE_STATUS_BATTERR		16 //something wrong with battery?!
+#define EVSE_STATUS_STOPPED		32 //charger is stopped
+
+void timer2Int()
 {
 	timerFastCounter++;
 	if (timerFastCounter == 4)
 	{
+		if (bChademoMode  && bChademoSendRequests) bChademoRequest = 1;
 		timerFastCounter = 0;
 		timerIntCounter++;
 		if (timerIntCounter < 10)
@@ -67,7 +127,15 @@ void oneWireInt()
 }
   
 void setup()
-{  
+{ 
+//first thing configure the I/O pins and set them to a sane state
+  pinMode(IN0, INPUT);
+  pinMode(IN1, INPUT);
+  pinMode(OUT0, OUTPUT);
+  pinMode(OUT1, OUTPUT);
+  digitalWrite(OUT0, LOW);
+  digitalWrite(OUT1, LOW);
+
   Serial.begin(115200);
   BTSerial.begin(38400);
   altSerial.begin(9600);
@@ -81,7 +149,7 @@ void setup()
   EEPROM_readAnything(ADDR_VoltageCalibration, VoltageCalibration);
   attachInterrupt(0, Save, FALLING);
   FrequencyTimer2::setPeriod(25000); //interrupt every 25ms
-  FrequencyTimer2::setOnOverflow(oneWireInt);
+  FrequencyTimer2::setOnOverflow(timer2Int);
 	
   Serial.print("Found ");
   tempSensorCount = sensors.getDeviceCount(); 
@@ -90,55 +158,120 @@ void setup()
 }
 void loop()
 {
-  uint8_t pos;
-  CurrentMillis = millis();
+	uint8_t pos;
+	CurrentMillis = millis();
  
-  if(CurrentMillis - PreviousMillis >= Interval)
-  {
-    Time = CurrentMillis - PreviousMillis;
-    PreviousMillis = CurrentMillis;   
+	if(CurrentMillis - PreviousMillis >= Interval)
+	{
+		Time = CurrentMillis - PreviousMillis;
+		PreviousMillis = CurrentMillis;   
     
-    Count++;
-    Voltage = ina.readBusVoltage() * VoltageCalibration;
-    Current = ina.readShuntVoltage() * CurrentCalibration;
-    AmpHours = AmpHours + Current * (float)Time / 1000.0 / 3600.0;
-    Power = Voltage * Current / 1000.0;
-    KiloWattHours = KiloWattHours + Power * (float)Time / 1000.0 / 3600.0;
+		Count++;
+		Voltage = ina.readBusVoltage() * VoltageCalibration;
+		Current = ina.readShuntVoltage() * CurrentCalibration;
+		AmpHours = AmpHours + Current * (float)Time / 1000.0 / 3600.0;
+		Power = Voltage * Current / 1000.0;
+		KiloWattHours = KiloWattHours + Power * (float)Time / 1000.0 / 3600.0;
 
-    if (Count >= 50)
-    {Count = 0;
-     USB();
-     BT();
-     CANBUS();
-     Save();
-     }
-  }
+		if (!bChademoMode) 
+		{
+			if (Count >= 50)
+			{
+				Count = 0;
+				USB();
+				BT();
+				CANBUS();
+				Save();
+			}
+		}		
+	}
   
-  if (bStartConversion == 1)
-  {
-	  bStartConversion = 0;
-	  sensors.requestTemperatures();
-  }
-  if (bGetTemperature)
-  {
-	  bGetTemperature = 0;
-	  pos = sensorReadPosition;
-	  if (pos < tempSensorCount)
-	  {
-		  //sensors.isConnected(pos);
-		  Serial.print(pos);
-		  Serial.print(": ");
-		  //Serial.println(sensors.getCelsius(pos));
-		  Serial.println(sensors.getTempCByIndex(pos));
-          }
-  }
+	if (bStartConversion == 1)
+	{
+		bStartConversion = 0;
+		sensors.requestTemperatures();
+	}
+	if (bGetTemperature)
+	{
+		bGetTemperature = 0;
+		pos = sensorReadPosition;
+		if (pos < tempSensorCount)
+		{		  
+			Serial.print(pos);
+			Serial.print(": ");
+			//sensors.isConnected(pos);
+			// Serial.println(sensors.getCelsius(pos));
+			Serial.println(sensors.getTempCByIndex(pos));
+		}
+	}
+
+	//Danger Will Robinson. There is no debouncing here. That might be naughty.
+	if (!digitalRead(IN1)) //IN1 goes low if we have been plugged into the chademo port
+	{
+		bChademoMode = 1;
+		if (chademoState = STOPPED) chademoState = STARTUP;
+	}
+	else 
+	{
+		bChademoMode = 0;
+		chademoState = STOPPED;
+	}
+
+	if (bChademoMode)
+	{
+		switch (chademoState)
+		{
+		case STARTUP: //really useful state huh?
+			chademoState = SEND_INITIAL_PARAMS; 
+			break;
+		case SEND_INITIAL_PARAMS:
+			sendChademoBattSpecs();
+			sendChademoChargingTime();
+			chademoState = WAIT_FOR_EVSE_PARAMS;
+			break;
+		case WAIT_FOR_EVSE_PARAMS:
+			//for now do nothing while we wait. Might want to try to resend start up messages periodically if no reply
+			break;
+		case SET_CHARGE_BEGIN:
+			digitalWrite(OUT1, HIGH); //signal that we're ready to charge
+			chademoState = WAIT_FOR_BEGIN_CONFIRMATION;
+			break;
+		case WAIT_FOR_BEGIN_CONFIRMATION:
+			if (!digitalRead(IN0))
+			{
+				chademoState = CLOSE_CONTACTORS;
+			}
+			break;
+		case CLOSE_CONTACTORS:
+			digitalWrite(OUT0, HIGH);
+			chademoState = RUNNING;
+			bChademoSendRequests = 1; //superfluous likely... could just use chademoState == RUNNING in other code
+			sendChademoStatus(); //send it right away to be sure we're in good shape
+			break;
+		case RUNNING:
+			if (bChademoSendRequests && bChademoRequest)
+			{
+				bChademoRequest = 0;
+				sendChademoStatus();
+			}
+			break;
+		case FAULTED:
+			digitalWrite(OUT0, LOW);
+			digitalWrite(OUT1, LOW);
+			break;
+		case STOPPED:
+			digitalWrite(OUT0, LOW);
+			digitalWrite(OUT1, LOW);
+			break;
+		}
+	}
 }
 
 void Save()
 {
-  EEPROM_writeAnything(ADDR_AmpHours, AmpHours);
-  EEPROM_writeAnything(ADDR_KiloWattHours, KiloWattHours);
-  EEPROM_writeAnything(ADDR_VoltageCalibration, VoltageCalibration);
+	EEPROM_writeAnything(ADDR_AmpHours, AmpHours);
+	EEPROM_writeAnything(ADDR_KiloWattHours, KiloWattHours);
+	EEPROM_writeAnything(ADDR_VoltageCalibration, VoltageCalibration);
 }  
 
 void USB()
@@ -236,3 +369,45 @@ void CANBUS()
   canMsg[7] = 0x00; // Not Used
   CAN.sendMsgBuf(canMsgID, 0, 4, canMsg);
  }
+
+void sendChademoBattSpecs()
+{
+	canMsgID  = CARSIDE_BATT;
+	canMsg[0] = 0x00; // Not Used
+	canMsg[1] = 0x00; // Not Used
+	canMsg[2] = 0x00; // Not Used
+	canMsg[3] = 0x00; // Not Used
+	canMsg[4] = lowByte(maxVoltage);
+	canMsg[5] = highByte(maxVoltage); 
+	canMsg[6] = packSize;
+	canMsg[7] = 0; //not used
+	CAN.sendMsgBuf(canMsgID, 0, 8, canMsg);
+}
+
+void sendChademoChargingTime()
+{
+	canMsgID  = CARSIDE_CHARGETIME;
+	canMsg[0] = 0x00; // Not Used
+	canMsg[1] = 0xFF; //not using 10 second increment mode
+	canMsg[2] = 10; //ask for a 10 minute charge - for safety since this is still a test
+	canMsg[3] = 10; //how long we think the charge will take. Also 10 minutes for safety
+	canMsg[4] = 0; //not used
+	canMsg[5] = 0; //not used
+	canMsg[6] = 0; //not used
+	canMsg[7] = 0; //not used
+	CAN.sendMsgBuf(canMsgID, 0, 8, canMsg);
+}
+
+void sendChademoStatus()
+{
+	canMsgID  = CARSIDE_CONTROL;
+	canMsg[0] = 0; //claim to only support the chademo 0.9 protocol. It's safer/easier that way
+	canMsg[1] = lowByte(targetVoltage);
+	canMsg[2] = highByte(targetVoltage);
+	canMsg[3] = targetAmperage;
+	canMsg[4] = 0; //hard code claim to have no faults. Is that smart? Probably not.
+	canMsg[5] = 1; //enable charging, say we're in park, we have no faults, the contactor is shut, and we want to charge
+	canMsg[6] = packSize / 2; //always claim that the battery is at 50% charge. Also not particularly bright but probably OK for early testing
+	canMsg[7] = 0; //not used
+	CAN.sendMsgBuf(canMsgID, 0, 8, canMsg);
+}
