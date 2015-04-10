@@ -56,6 +56,7 @@ volatile uint8_t bChademoRequest = 0;  //is it time to send one of those updates
 //target values are what we send with periodic frames and can be changed.
 uint16_t targetVoltage = 375; //in 1V increments so literally the voltage we want to target
 uint8_t targetAmperage = 50; //amperage to ask for
+uint8_t askingAmps = 0; //how many amps to ask for. Trends toward targetAmperage
 //Maximums are probably sent only once (in start up handshake) and set the upper limits so nothing dumb happens.
 uint16_t maxVoltage = 400; //voltage to never exceed no matter what
 uint8_t maxAmps = 100; //how many amps to be limited to
@@ -82,7 +83,7 @@ typedef struct
 	uint8_t supportWeldCheck;
 	uint16_t availVoltage;
 	uint8_t availCurrent;
-	uint16_t thresholdVoltage;
+	uint16_t thresholdVoltage; //evse calculates this. It is the voltage at which it'll abort charging to save the battery pack in case we asked for something stupid
 } EVSE_PARAMS;
 EVSE_PARAMS evse_params;
 
@@ -161,6 +162,9 @@ void setup()
 	pinMode(OUT1, OUTPUT);
 	digitalWrite(OUT0, LOW);
 	digitalWrite(OUT1, LOW);
+	pinMode(A1, OUTPUT); //KEY - Must be HIGH
+	pinMode(A0, INPUT); //STATE
+	digitalWrite(A1, HIGH);
 
 	//set up SPI so we can use the MCP2515 module
   	//SPI.setClockDivider(SPI_CLOCK_DIV2);
@@ -333,7 +337,7 @@ void loop()
 			digitalWrite(OUT0, HIGH);
 			chademoState = RUNNING;
 			bChademoSendRequests = 1; //superfluous likely... could just use chademoState == RUNNING in other code
-			sendChademoStatus(); //send it right away to be sure we're in good shape
+			//sendChademoStatus(); //send it right away to be sure we're in good shape
 			break;
 		case RUNNING:
 			if (bChademoSendRequests && bChademoRequest)
@@ -521,10 +525,16 @@ void sendChademoStatus()
 	outputFrame.data[0] = 0; //claim to only support the chademo 0.9 protocol. It's safer/easier that way
 	outputFrame.data[1] = lowByte(targetVoltage);
 	outputFrame.data[2] = highByte(targetVoltage);
-	outputFrame.data[3] = targetAmperage;
+	outputFrame.data[3] = askingAmps;
 	outputFrame.data[4] = 0; //hard code claim to have no faults. Is that smart? Probably not.
 	outputFrame.data[5] = 1; //enable charging, say we're in park, we have no faults, the contactor is shut, and we want to charge
 	outputFrame.data[6] = packSize / 2; //always claim that the battery is at 50% charge. Also not particularly bright but probably OK for early testing
 	outputFrame.data[7] = 0; //not used
 	CAN.EnqueueTX(outputFrame);
+	if (askingAmps < targetAmperage) askingAmps++;
+	//not a typo. We're allowed to change requested amps by +/- 20A per second. We send the above frame every 100ms so a single
+	//increment means we can ramp up 10A per second. But, we want to ramp down quickly if there is a problem so do two which
+	//gives us -20A per second.
+	if (askingAmps > targetAmperage) askingAmps--;
+	if (askingAmps > targetAmperage) askingAmps--;
 }
