@@ -14,7 +14,7 @@ SoftwareSerial BTSerial(A2, A1); // RX | TX
 AltSoftSerial altSerial; //pins 8 and 9
 
            //CS, RESET, INT
-MCP2515 CAN(10, 9, 3); //there is no controllable reset pin but I set it to 9 because I believe D9 to be unused.
+MCP2515 CAN(10, 49, 3); //there is no controllable reset pin but I set it to 49 because thats not really a pin
 
 DS2480B ds(altSerial);
 DallasTemperature sensors(&ds);
@@ -41,8 +41,6 @@ float Power = 0;
 float KiloWattHours = 0;
 float AmpHours = 0;
 int Count = 0;
-int canMsgID  = 0x000;
-unsigned char canMsg[8] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 byte Command = 0; // "z" will reset the AmpHours and KiloWattHours counters
 volatile uint8_t bStartConversion = 0;
 volatile uint8_t bGetTemperature = 0;
@@ -71,10 +69,31 @@ enum CHADEMOSTATE
 	WAIT_FOR_BEGIN_CONFIRMATION,
 	CLOSE_CONTACTORS,
 	RUNNING,
+	CEASE_CURRENT,
+	WAIT_FOR_ZERO_CURRENT,
+	OPEN_CONTACTOR,
 	FAULTED,
 	STOPPED
 };
 CHADEMOSTATE chademoState = STOPPED;
+
+typedef struct 
+{
+	uint8_t supportWeldCheck;
+	uint16_t availVoltage;
+	uint8_t availCurrent;
+	uint16_t thresholdVoltage;
+} EVSE_PARAMS;
+EVSE_PARAMS evse_params;
+
+typedef struct 
+{
+	uint16_t presentVoltage;
+	uint8_t presentCurrent;
+	uint8_t status;
+	uint16_t remainingChargeSeconds;
+} EVSE_STATUS;
+EVSE_STATUS evse_status;
 
 //The IDs for chademo comm - both carside and EVSE side so we know what to listen for
 //as well.
@@ -144,9 +163,9 @@ void setup()
 	digitalWrite(OUT1, LOW);
 
 	//set up SPI so we can use the MCP2515 module
-  	SPI.setClockDivider(SPI_CLOCK_DIV2);
-	SPI.setDataMode(SPI_MODE0);
-	SPI.setBitOrder(MSBFIRST);
+  	//SPI.setClockDivider(SPI_CLOCK_DIV2);
+	//SPI.setDataMode(SPI_MODE0);
+	//SPI.setBitOrder(MSBFIRST);
 	SPI.begin();
 
 	Serial.begin(115200);
@@ -156,10 +175,10 @@ void setup()
 	sensors.begin();
 	sensors.setWaitForConversion(false); //we're handling the time delay ourselves so no need to wait when asking for temperatures
   
-	CAN.Init(250, 16);
-	CAN.InitFilters(false);
-	CAN.SetRXMask(MASK0, 0x7F0, 0); //match all but bottom four bits
-	CAN.SetRXFilter(FILTER0, 0x100, 0); //allows 0x100 - 0x10F which is perfect for CHADEMO
+	CAN.Init(500, 16);
+	CAN.InitFilters(true);
+	//CAN.SetRXMask(MASK0, 0x7F0, 0); //match all but bottom four bits
+	//CAN.SetRXFilter(FILTER0, 0x100, 0); //allows 0x100 - 0x10F which is perfect for CHADEMO
 	attachInterrupt(1, CANHandler, FALLING); //interrupt 1 on this chip is pin 3 which is properly hooked up
 
 	ina.begin(69);
@@ -180,6 +199,7 @@ void setup()
 void loop()
 {
 	uint8_t pos;
+	Frame rxMessage;
 	CurrentMillis = millis();
  
 	if(CurrentMillis - PreviousMillis >= Interval)
@@ -205,6 +225,52 @@ void loop()
 				Save();
 			}
 		}		
+	}
+
+	if (CAN.GetRXFrame(rxMessage)) {
+		if (rxMessage.id == EVSE_PARAMS)
+		{
+			if (chademoState == WAIT_FOR_EVSE_PARAMS) chademoState = SET_CHARGE_BEGIN;
+			evse_params.supportWeldCheck = rxMessage.data[0];
+			evse_params.availVoltage = rxMessage.data[1] + rxMessage.data[2] * 256;
+			evse_params.availCurrent = rxMessage.data[3];			
+			evse_params.thresholdVoltage = rxMessage.data[4] + rxMessage.data[5] * 256;
+
+			//if charger cannot provide our requested voltage then GTFO
+			if (evse_params.availVoltage < targetVoltage)
+			{
+				chademoState = CEASE_CURRENT;
+			}
+
+			//if we want more current then it can provide then revise our request to match max output
+			if (evse_params.availCurrent < targetAmperage) targetAmperage = evse_params.availCurrent;
+		}
+		if (rxMessage.id == EVSE_STATUS)
+		{
+			evse_status.presentVoltage = rxMessage.data[1] + 256 * rxMessage.data[2];
+			evse_status.presentCurrent  = rxMessage.data[3];
+			evse_status.status = rxMessage.data[5];				
+			if (rxMessage.data[6] < 0xFF)
+			{
+				evse_status.remainingChargeSeconds = rxMessage.data[6] * 10;
+			}
+			else 
+			{
+				evse_status.remainingChargeSeconds = rxMessage.data[7] * 60;
+			}
+
+			//on fault try to turn off current immediately and cease operation
+			if ((evse_status.status & 0x1A) != 0) //if bits 1, 3, or 4 are set then we have a problem.
+			{
+				if (chademoState == RUNNING) chademoState = CEASE_CURRENT;
+			}
+
+			//if there is no remaining time then gracefully shut down
+			if (evse_status.remainingChargeSeconds == 0)
+			{
+				if (chademoState == RUNNING) chademoState = CEASE_CURRENT;
+			}
+		}
 	}
   
 	if (bStartConversion == 1)
@@ -276,9 +342,25 @@ void loop()
 				sendChademoStatus();
 			}
 			break;
-		case FAULTED:
+		case CEASE_CURRENT:
+			targetAmperage = 0;
+			sendChademoStatus(); //immediately try to get current stopped.
+			chademoState = WAIT_FOR_ZERO_CURRENT;
+			break;
+		case WAIT_FOR_ZERO_CURRENT:
+			if (evse_status.presentCurrent == 0)
+			{
+				chademoState = OPEN_CONTACTOR;
+			}
+			break;
+		case OPEN_CONTACTOR:
 			digitalWrite(OUT0, LOW);
-			digitalWrite(OUT1, LOW);
+			chademoState = STOPPED;
+			break;
+		case FAULTED:
+			chademoState = CEASE_CURRENT;
+			//digitalWrite(OUT0, LOW);
+			//digitalWrite(OUT1, LOW);
 			break;
 		case STOPPED:
 			digitalWrite(OUT0, LOW);
