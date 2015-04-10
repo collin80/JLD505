@@ -169,7 +169,7 @@ void setup()
 	SPI.begin();
 
 	Serial.begin(115200);
-	BTSerial.begin(38400);
+	BTSerial.begin(115200);
 	altSerial.begin(9600);
 	
 	sensors.begin();
