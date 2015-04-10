@@ -306,16 +306,31 @@ void loop()
 	{
 		bChademoMode = 0;
 		chademoState = STOPPED;
+		//maybe it would be a good idea to try to see if EVSE is still transmitting to us and providing current
+		//as it is not a good idea to open the contactors under load. But, IN1 shouldn't trigger 
+		//until the EVSE is ready. Investigate options here.
+		digitalWrite(OUT0, LOW);
+		digitalWrite(OUT1, LOW);
 	}
 
 	if (bChademoMode)
 	{
+		if (bChademoSendRequests && bChademoRequest)
+		{
+			bChademoRequest = 0;
+			sendChademoStatus();
+		}
+
 		switch (chademoState)
 		{
 		case STARTUP: //really useful state huh?
 			chademoState = SEND_INITIAL_PARAMS; 
 			break;
 		case SEND_INITIAL_PARAMS:
+			//we could do calculations to see how long the charge should take based on SOC and 
+			//also set a more realistic starting amperage. Options for the future.
+			//One problem with that is that we don't yet know the EVSE parameters so we can't know
+			//the max allowable amperage just yet.
 			sendChademoBattSpecs();
 			sendChademoChargingTime();
 			chademoState = WAIT_FOR_EVSE_PARAMS;
@@ -340,15 +355,11 @@ void loop()
 			//sendChademoStatus(); //send it right away to be sure we're in good shape
 			break;
 		case RUNNING:
-			if (bChademoSendRequests && bChademoRequest)
-			{
-				bChademoRequest = 0;
-				sendChademoStatus();
-			}
+			//do processing here by taking our measured voltage, amperage, and SOC to see if we should be commanding something
+			//different to the EVSE. Also monitor temperatures to make sure we're not incinerating the pack.
 			break;
 		case CEASE_CURRENT:
 			targetAmperage = 0;
-			sendChademoStatus(); //immediately try to get current stopped.
 			chademoState = WAIT_FOR_ZERO_CURRENT;
 			break;
 		case WAIT_FOR_ZERO_CURRENT:
@@ -369,6 +380,7 @@ void loop()
 		case STOPPED:
 			digitalWrite(OUT0, LOW);
 			digitalWrite(OUT1, LOW);
+			bChademoSendRequests = 0; //don't need to keep sending anymore.
 			break;
 		}
 	}
