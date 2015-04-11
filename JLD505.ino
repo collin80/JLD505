@@ -54,8 +54,6 @@ uint8_t bChademoMode = 0; //accessed but not modified in ISR so it should be OK 
 uint8_t bChademoSendRequests = 0; //should we be sending periodic status updates?
 volatile uint8_t bChademoRequest = 0;  //is it time to send one of those updates?
 //target values are what we send with periodic frames and can be changed.
-uint16_t targetVoltage = 375; //in 1V increments so literally the voltage we want to target
-uint8_t targetAmperage = 50; //amperage to ask for
 uint8_t askingAmps = 0; //how many amps to ask for. Trends toward targetAmperage
 //Maximums are probably sent only once (in start up handshake) and set the upper limits so nothing dumb happens.
 uint16_t maxVoltage = 400; //voltage to never exceed no matter what
@@ -95,6 +93,24 @@ typedef struct
 	uint16_t remainingChargeSeconds;
 } EVSE_STATUS;
 EVSE_STATUS evse_status;
+
+typedef struct 
+{
+	uint16_t targetVoltage; //what voltage we want the EVSE to put out
+	uint8_t targetCurrent; //what current we'd like the EVSE to provide
+	uint8_t remainingKWH; //report # of KWh in the battery pack (charge level)
+	uint8_t battOverVolt : 1; //we signal that battery or a cell is too high of a voltage
+	uint8_t battUnderVolt : 1; //we signal that battery is too low
+	uint8_t currDeviation : 1; //we signal that measured current is not the same as EVSE is reporting
+	uint8_t battOverTemp : 1; //we signal that battery is too hot
+	uint8_t voltDeviation : 1; //we signal that we measure a different voltage than EVSE reports
+	uint8_t chargingEnabled : 1; //ask EVSE to enable charging
+	uint8_t notParked : 1; //advise EVSE that we're not in park.
+	uint8_t chargingFault : 1; //signal EVSE that we found a fault
+	uint8_t contactorOpen : 1; //tell EVSE whether we've closed the charging contactor 
+	uint8_t stopRequest : 1; //request that the charger cease operation before we really get going
+} CARSIDE_STATUS;
+CARSIDE_STATUS carStatus;
 
 //The IDs for chademo comm - both carside and EVSE side so we know what to listen for
 //as well.
@@ -190,6 +206,11 @@ void setup()
 	tempSensorCount = sensors.getDeviceCount(); 
 	Serial.print(tempSensorCount);
 	Serial.println(" temperature sensors.");
+
+	//hard coded for now just for testing. Don't do this forever.
+	carStatus.targetCurrent = 50;
+	carStatus.targetVoltage = 375; 
+	carStatus.contactorOpen = 1;
 }
 
 void loop()
@@ -300,7 +321,7 @@ void loop()
 	if (!digitalRead(IN1)) //IN1 goes low if we have been plugged into the chademo port
 	{
 		bChademoMode = 1;
-		if (chademoState = STOPPED) {
+		if (chademoState == STOPPED) {
 			chademoState = STARTUP;
 			Serial.println("Starting Chademo process.");
 		}
@@ -326,6 +347,8 @@ void loop()
 		{
 			bChademoRequest = 0;
 			sendChademoStatus();
+			sendChademoBattSpecs();
+			sendChademoChargingTime();
 			Serial.println("Tx");
 		}
 
@@ -339,8 +362,7 @@ void loop()
 			//also set a more realistic starting amperage. Options for the future.
 			//One problem with that is that we don't yet know the EVSE parameters so we can't know
 			//the max allowable amperage just yet.
-			sendChademoBattSpecs();
-			sendChademoChargingTime();
+			bChademoSendRequests = 1; //causes chademo frames to be sent out every 100ms
 			chademoState = WAIT_FOR_EVSE_PARAMS;
 			Serial.println("Sent parameters to EVSE. Waiting.");
 			break;
@@ -350,6 +372,7 @@ void loop()
 		case SET_CHARGE_BEGIN:
 			Serial.println("Setting begin charge request.");
 			digitalWrite(OUT1, HIGH); //signal that we're ready to charge
+			//carStatus.chargingEnabled = 1; //should this be enabled here???
 			chademoState = WAIT_FOR_BEGIN_CONFIRMATION;
 			break;
 		case WAIT_FOR_BEGIN_CONFIRMATION:
@@ -362,8 +385,8 @@ void loop()
 			Serial.println("Closing contactor");
 			digitalWrite(OUT0, HIGH);
 			chademoState = RUNNING;
-			bChademoSendRequests = 1; //superfluous likely... could just use chademoState == RUNNING in other code
-			//sendChademoStatus(); //send it right away to be sure we're in good shape
+			carStatus.contactorOpen = 0; //its closed now
+			carStatus.chargingEnabled = 1; //please sir, I'd like some charge
 			break;
 		case RUNNING:
 			//do processing here by taking our measured voltage, amperage, and SOC to see if we should be commanding something
@@ -371,7 +394,7 @@ void loop()
 			break;
 		case CEASE_CURRENT:
 			Serial.println("Setting current request to zero.");
-			targetAmperage = 0;
+			carStatus.targetCurrent = 0;
 			chademoState = WAIT_FOR_ZERO_CURRENT;
 			break;
 		case WAIT_FOR_ZERO_CURRENT:
@@ -383,6 +406,9 @@ void loop()
 		case OPEN_CONTACTOR:
 			Serial.println("Opening contactor");
 			digitalWrite(OUT0, LOW);
+			carStatus.contactorOpen = 1;
+			carStatus.chargingEnabled = 0;
+			sendChademoStatus(); //we probably need to force this right now
 			chademoState = STOPPED;
 			break;
 		case FAULTED:
@@ -536,21 +562,35 @@ void sendChademoChargingTime()
 
 void sendChademoStatus()
 {
-	
+	uint8_t faults = 0;
+	uint8_t status = 0;
+
+	if (carStatus.battOverTemp) faults |= CARSIDE_FAULT_OVERT;
+	if (carStatus.battOverVolt) faults |= CARSIDE_FAULT_OVERV;
+	if (carStatus.battUnderVolt) faults |= CARSIDE_FAULT_UNDERV;
+	if (carStatus.currDeviation) faults |= CARSIDE_FAULT_CURR;
+	if (carStatus.voltDeviation) faults |= CARSIDE_FAULT_VOLTM;
+
+	if (carStatus.chargingEnabled) status |= CARSIDE_STATUS_CHARGE;
+	if (carStatus.notParked) status |= CARSIDE_STATUS_NOTPARK;
+	if (carStatus.chargingFault) status |= CARSIDE_STATUS_MALFUN;
+	if (carStatus.contactorOpen) status |= CARSIDE_STATUS_CONTOP;
+	if (carStatus.stopRequest) status |= CARSIDE_STATUS_CHSTOP;
+
 	canMsgID = CARSIDE_CONTROL;
-	canMsg[0] = 0; //claim to only support the chademo 0.9 protocol. It's safer/easier that way
-	canMsg[1] = lowByte(targetVoltage);
-	canMsg[2] = highByte(targetVoltage);
+	canMsg[0] = 1; //claim to only support the chademo 0.9 protocol. It's safer/easier that way
+	canMsg[1] = lowByte(carStatus.targetVoltage);
+	canMsg[2] = highByte(carStatus.targetVoltage);
 	canMsg[3] = askingAmps;
-	canMsg[4] = 0; //hard code claim to have no faults. Is that smart? Probably not.
-	canMsg[5] = 1; //enable charging, say we're in park, we have no faults, the contactor is shut, and we want to charge
+	canMsg[4] = faults;
+	canMsg[5] = status;
 	canMsg[6] = packSize / 2; //always claim that the battery is at 50% charge. Also not particularly bright but probably OK for early testing
 	canMsg[7] = 0; //not used
 	CAN.sendMsgBuf(canMsgID, 0, 8, canMsg);
-	if (askingAmps < targetAmperage) askingAmps++;
+	if (askingAmps < carStatus.targetCurrent) askingAmps++;
 	//not a typo. We're allowed to change requested amps by +/- 20A per second. We send the above frame every 100ms so a single
 	//increment means we can ramp up 10A per second. But, we want to ramp down quickly if there is a problem so do two which
 	//gives us -20A per second.
-	if (askingAmps > targetAmperage) askingAmps--;
-	if (askingAmps > targetAmperage) askingAmps--;
+	if (askingAmps > carStatus.targetCurrent) askingAmps--;
+	if (askingAmps > carStatus.targetCurrent) askingAmps--;
 }
