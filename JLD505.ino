@@ -300,10 +300,17 @@ void loop()
 	if (!digitalRead(IN1)) //IN1 goes low if we have been plugged into the chademo port
 	{
 		bChademoMode = 1;
-		if (chademoState = STOPPED) chademoState = STARTUP;
+		if (chademoState = STOPPED) {
+			chademoState = STARTUP;
+			Serial.println("Starting Chademo process.");
+		}
 	}
 	else 
 	{
+		if (bChademoMode == 1) 
+		{
+			Serial.println("Stopping chademo process.");
+		}
 		bChademoMode = 0;
 		chademoState = STOPPED;
 		//maybe it would be a good idea to try to see if EVSE is still transmitting to us and providing current
@@ -319,6 +326,7 @@ void loop()
 		{
 			bChademoRequest = 0;
 			sendChademoStatus();
+			Serial.println("Tx");
 		}
 
 		switch (chademoState)
@@ -334,11 +342,13 @@ void loop()
 			sendChademoBattSpecs();
 			sendChademoChargingTime();
 			chademoState = WAIT_FOR_EVSE_PARAMS;
+			Serial.println("Sent parameters to EVSE. Waiting.");
 			break;
 		case WAIT_FOR_EVSE_PARAMS:
 			//for now do nothing while we wait. Might want to try to resend start up messages periodically if no reply
 			break;
 		case SET_CHARGE_BEGIN:
+			Serial.println("Setting begin charge request.");
 			digitalWrite(OUT1, HIGH); //signal that we're ready to charge
 			chademoState = WAIT_FOR_BEGIN_CONFIRMATION;
 			break;
@@ -349,6 +359,7 @@ void loop()
 			}
 			break;
 		case CLOSE_CONTACTORS:
+			Serial.println("Closing contactor");
 			digitalWrite(OUT0, HIGH);
 			chademoState = RUNNING;
 			bChademoSendRequests = 1; //superfluous likely... could just use chademoState == RUNNING in other code
@@ -359,6 +370,7 @@ void loop()
 			//different to the EVSE. Also monitor temperatures to make sure we're not incinerating the pack.
 			break;
 		case CEASE_CURRENT:
+			Serial.println("Setting current request to zero.");
 			targetAmperage = 0;
 			chademoState = WAIT_FOR_ZERO_CURRENT;
 			break;
@@ -369,10 +381,12 @@ void loop()
 			}
 			break;
 		case OPEN_CONTACTOR:
+			Serial.println("Opening contactor");
 			digitalWrite(OUT0, LOW);
 			chademoState = STOPPED;
 			break;
 		case FAULTED:
+			Serial.println("Detected fault!");
 			chademoState = CEASE_CURRENT;
 			//digitalWrite(OUT0, LOW);
 			//digitalWrite(OUT1, LOW);
