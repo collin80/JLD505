@@ -10,7 +10,7 @@
 #include <DallasTemperature.h>
 #include <FrequencyTimer2.h>
 
-SoftwareSerial BTSerial(A2, A1); // RX | TX
+SoftwareSerial BTSerial(A2, A3); // RX | TX
 AltSoftSerial altSerial; //pins 8 and 9
 
 DS2480B ds(altSerial);
@@ -210,17 +210,22 @@ void loop()
 		Power = Voltage * Current / 1000.0;
 		KiloWattHours = KiloWattHours + Power * (float)Time / 1000.0 / 3600.0;
 
-		if (!bChademoMode) 
-		{
+		//if (!bChademoMode) 
+		//{
 			if (Count >= 50)
 			{
 				Count = 0;
-				USB();
-				BT();
+				USB();				
 				CANBUS();
+				if (!bChademoMode) BT();
+				else 
+				{
+					Serial.print("Chamdemo Mode: ");
+					Serial.println(chademoState);
+				}
 				Save();
 			}
-		}		
+		//}		
 	}
 
 	if (Flag_Recv) {
