@@ -591,10 +591,11 @@ void sendChademoStatus()
 	canMsg[6] = packSize / 2; //always claim that the battery is at 50% charge. Also not particularly bright but probably OK for early testing
 	canMsg[7] = 0; //not used
 	CAN.sendMsgBuf(canMsgID, 0, 8, canMsg);
-	if (askingAmps < carStatus.targetCurrent) askingAmps++;
+	if (chademoState == RUNNING &&  askingAmps < carStatus.targetCurrent) askingAmps++;
 	//not a typo. We're allowed to change requested amps by +/- 20A per second. We send the above frame every 100ms so a single
 	//increment means we can ramp up 10A per second. But, we want to ramp down quickly if there is a problem so do two which
 	//gives us -20A per second.
+	if (chademoState != RUNNING && askingAmps > 0) askingAmps--;
 	if (askingAmps > carStatus.targetCurrent) askingAmps--;
 	if (askingAmps > carStatus.targetCurrent) askingAmps--;
 }
