@@ -50,8 +50,11 @@ typedef struct
 	float packSizeKWH;
 	float voltageCalibration;
 	float currentCalibration;
+	uint8_t chademoMode; 
 	uint16_t maxChargeVoltage;
+	uint16_t targetChargeVoltage;
 	uint8_t maxChargeAmperage;
+	uint8_t minChargeAmperage;
 } EESettings;
 EESettings settings;
 #define EEPROM_VALID	0xDE
@@ -148,6 +151,9 @@ CARSIDE_STATUS carStatus;
 #define EVSE_STATUS_BATTERR		16 //something wrong with battery?!
 #define EVSE_STATUS_STOPPED		32 //charger is stopped
 
+#define CHADEMO_MODE_NOTAPER	0
+#define CHADEMO_MODE_TAPER		1
+
 void MCP2515_ISR()
 {
     Flag_Recv = 1;
@@ -214,8 +220,11 @@ void setup()
 		settings.currentCalibration = 300.0/0.075; //800A 75mv shunt
 		settings.voltageCalibration = (100000.0*830000.0/930000.0+1000000.0)/(100275.0*830000.0/930000.0); // (Voltage Divider with (100k in parallel with 830k) and 1M )
 		settings.packSizeKWH = 15.0; //just a random guess. Maybe it should default to zero though?
-		settings.maxChargeAmperage = 40;
-		settings.maxChargeVoltage = 160;
+		settings.maxChargeAmperage = 120;
+		settings.maxChargeVoltage = 180;
+		settings.chademoMode = CHADEMO_MODE_NOTAPER;
+		settings.targetChargeVoltage = 160;
+		settings.minChargeAmperage = 10;
 		EEPROM_writeAnything(0, settings);
 	}
 
@@ -311,6 +320,12 @@ void loop()
 			if ((evse_status.status & 0x1A) != 0) //if bits 1, 3, or 4 are set then we have a problem.
 			{
 				Serial.println(F("EVSE reports fault. Aborting."));
+				if (chademoState == RUNNING) chademoState = CEASE_CURRENT;
+			}
+
+			if ((evse_status.status & EVSE_STATUS_STOPPED) != 0)
+			{
+				Serial.println(F("EVSE requests we stop charging."));
 				if (chademoState == RUNNING) chademoState = CEASE_CURRENT;
 			}
 
