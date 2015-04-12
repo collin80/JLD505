@@ -50,7 +50,6 @@ typedef struct
 	float packSizeKWH;
 	float voltageCalibration;
 	float currentCalibration;
-	uint8_t chademoMode; 
 	uint16_t maxChargeVoltage;
 	uint16_t targetChargeVoltage;
 	uint8_t maxChargeAmperage;
@@ -66,10 +65,6 @@ uint8_t bChademoSendRequests = 0; //should we be sending periodic status updates
 volatile uint8_t bChademoRequest = 0;  //is it time to send one of those updates?
 //target values are what we send with periodic frames and can be changed.
 uint8_t askingAmps = 0; //how many amps to ask for. Trends toward targetAmperage
-//Maximums are probably sent only once (in start up handshake) and set the upper limits so nothing dumb happens.
-uint16_t maxVoltage = 400; //voltage to never exceed no matter what
-uint8_t maxAmps = 100; //how many amps to be limited to
-uint8_t packSize = 80; //how many kwh in tenths. Not used for anything other than display. Somewhat meaningless
 enum CHADEMOSTATE 
 {
 	STARTUP,
@@ -151,9 +146,6 @@ CARSIDE_STATUS carStatus;
 #define EVSE_STATUS_BATTERR		16 //something wrong with battery?!
 #define EVSE_STATUS_STOPPED		32 //charger is stopped
 
-#define CHADEMO_MODE_NOTAPER	0
-#define CHADEMO_MODE_TAPER		1
-
 void MCP2515_ISR()
 {
     Flag_Recv = 1;
@@ -222,7 +214,6 @@ void setup()
 		settings.packSizeKWH = 15.0; //just a random guess. Maybe it should default to zero though?
 		settings.maxChargeAmperage = 120;
 		settings.maxChargeVoltage = 180;
-		settings.chademoMode = CHADEMO_MODE_NOTAPER;
 		settings.targetChargeVoltage = 160;
 		settings.minChargeAmperage = 10;
 		EEPROM_writeAnything(0, settings);
@@ -237,9 +228,8 @@ void setup()
 	Serial.print(tempSensorCount);
 	Serial.println(F(" temperature sensors."));
 
-	//hard coded for now just for testing. Don't do this forever.
-	carStatus.targetCurrent = 50;
-	carStatus.targetVoltage = 375; 
+	carStatus.targetCurrent = settings.maxChargeAmperage;
+	carStatus.targetVoltage = settings.targetChargeVoltage;
 	carStatus.contactorOpen = 1;
 }
 
@@ -581,9 +571,9 @@ void sendChademoBattSpecs()
 	canMsg[1] = 0x00; // Not Used
 	canMsg[2] = 0x00; // Not Used
 	canMsg[3] = 0x00; // Not Used
-	canMsg[4] = lowByte(maxVoltage);
-	canMsg[5] = highByte(maxVoltage); 
-	canMsg[6] = packSize;
+	canMsg[4] = lowByte(settings.maxChargeVoltage);
+	canMsg[5] = highByte(settings.maxChargeVoltage); 
+	canMsg[6] = (uint8_t)settings.packSizeKWH;
 	canMsg[7] = 0; //not used
 	CAN.sendMsgBuf(canMsgID, 0, 8, canMsg);
 }
@@ -594,8 +584,8 @@ void sendChademoChargingTime()
 	canMsgID = CARSIDE_CHARGETIME;
 	canMsg[0] = 0x00; // Not Used
 	canMsg[1] = 0xFF; //not using 10 second increment mode
-	canMsg[2] = 10; //ask for a 10 minute charge - for safety since this is still a test
-	canMsg[3] = 10; //how long we think the charge will take. Also 10 minutes for safety
+	canMsg[2] = 90; //ask for how long of a charge? It will be forceably stopped if we hit this time
+	canMsg[3] = 60; //how long we think the charge will actually take
 	canMsg[4] = 0; //not used
 	canMsg[5] = 0; //not used
 	canMsg[6] = 0; //not used
@@ -627,7 +617,7 @@ void sendChademoStatus()
 	canMsg[3] = askingAmps;
 	canMsg[4] = faults;
 	canMsg[5] = status;
-	canMsg[6] = packSize / 2; //always claim that the battery is at 50% charge. Also not particularly bright but probably OK for early testing
+	canMsg[6] = (uint8_t)settings.kiloWattHours;
 	canMsg[7] = 0; //not used
 	CAN.sendMsgBuf(canMsgID, 0, 8, canMsg);
 	if (chademoState == RUNNING &&  askingAmps < carStatus.targetCurrent) askingAmps++;
