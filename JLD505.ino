@@ -23,20 +23,13 @@ DallasTemperature sensors(&ds);
 #define OUT1	6
 
 INA226 ina;
-int ADDR_AmpHours = 0;
-int ADDR_KiloWattHours = 10;
-int ADDR_VoltageCalibration = 20;
 const unsigned long Interval = 10;
-float VoltageCalibration = (100000.0*830000.0/930000.0+1000000.0)/(100275.0*830000.0/930000.0); // (Voltage Divider with (100k in parallel with 830k) and 1M )
-const float CurrentCalibration = 300.0/0.075; //800A 75mV Shunt
 unsigned long Time = 0; 
 unsigned long PreviousMillis = 0;
 unsigned long CurrentMillis = 0;
 float Voltage = 0;
 float Current = 0;
 float Power = 0;
-float KiloWattHours = 0;
-float AmpHours = 0;
 int Count = 0;
 byte Command = 0; // "z" will reset the AmpHours and KiloWattHours counters
 volatile uint8_t bStartConversion = 0;
@@ -48,6 +41,20 @@ uint8_t tempSensorCount = 0;
 int32_t canMsgID = 0;
 unsigned char canMsg[8];
 unsigned char Flag_Recv = 0;
+
+typedef struct
+{
+	uint8_t valid; //a token to store EEPROM version and validity. If it matches expected value then EEPROM is not reset to defaults
+	float ampHours;
+	float kiloWattHours;
+	float packSizeKWH;
+	float voltageCalibration;
+	float currentCalibration;
+	uint16_t maxChargeVoltage;
+	uint8_t maxChargeAmperage;
+} EESettings;
+EESettings settings;
+#define EEPROM_VALID	0xDE
 
 //Bunch o' chademo related stuff. 
 uint8_t bStartedCharge = 0;
@@ -197,17 +204,29 @@ void setup()
 
 	ina.begin(69);
 	ina.configure(INA226_AVERAGES_16, INA226_BUS_CONV_TIME_1100US, INA226_SHUNT_CONV_TIME_1100US, INA226_MODE_SHUNT_BUS_CONT);
-	EEPROM_readAnything(ADDR_AmpHours, AmpHours);
-	EEPROM_readAnything(ADDR_KiloWattHours, KiloWattHours);
-	EEPROM_readAnything(ADDR_VoltageCalibration, VoltageCalibration);
+
+	EEPROM_readAnything(0, settings);
+	if (settings.valid != EEPROM_VALID) //not proper version so reset to defaults
+	{
+		settings.valid = EEPROM_VALID;
+		settings.ampHours = 0.0;
+		settings.kiloWattHours = 0.0;
+		settings.currentCalibration = 300.0/0.075; //800A 75mv shunt
+		settings.voltageCalibration = (100000.0*830000.0/930000.0+1000000.0)/(100275.0*830000.0/930000.0); // (Voltage Divider with (100k in parallel with 830k) and 1M )
+		settings.packSizeKWH = 15.0; //just a random guess. Maybe it should default to zero though?
+		settings.maxChargeAmperage = 40;
+		settings.maxChargeVoltage = 160;
+		EEPROM_writeAnything(0, settings);
+	}
+
 	attachInterrupt(0, Save, FALLING);
 	FrequencyTimer2::setPeriod(25000); //interrupt every 25ms
 	FrequencyTimer2::setOnOverflow(timer2Int);
 	
-	Serial.print("Found ");
+	Serial.print(F("Found "));
 	tempSensorCount = sensors.getDeviceCount(); 
 	Serial.print(tempSensorCount);
-	Serial.println(" temperature sensors.");
+	Serial.println(F(" temperature sensors."));
 
 	//hard coded for now just for testing. Don't do this forever.
 	carStatus.targetCurrent = 50;
@@ -227,11 +246,11 @@ void loop()
 		PreviousMillis = CurrentMillis;   
     
 		Count++;
-		Voltage = ina.readBusVoltage() * VoltageCalibration;
-		Current = ina.readShuntVoltage() * CurrentCalibration;
-		AmpHours = AmpHours + Current * (float)Time / 1000.0 / 3600.0;
+		Voltage = ina.readBusVoltage() * settings.voltageCalibration;
+		Current = ina.readShuntVoltage() * settings.currentCalibration;
+		settings.ampHours += Current * (float)Time / 1000.0 / 3600.0;
 		Power = Voltage * Current / 1000.0;
-		KiloWattHours = KiloWattHours + Power * (float)Time / 1000.0 / 3600.0;
+		settings.kiloWattHours += Power * (float)Time / 1000.0 / 3600.0;
 
 		//if (!bChademoMode) 
 		//{
@@ -243,7 +262,7 @@ void loop()
 				if (!bChademoMode) BT();
 				else 
 				{
-					Serial.print("Chamdemo Mode: ");
+					Serial.print(F("Chamdemo Mode: "));
 					Serial.println(chademoState);
 				}
 				Save();
@@ -266,7 +285,7 @@ void loop()
 			//if charger cannot provide our requested voltage then GTFO
 			if (evse_params.availVoltage < carStatus.targetVoltage)
 			{
-				Serial.println("EVSE can't provide needed voltage. Aborting.");
+				Serial.println(F("EVSE can't provide needed voltage. Aborting."));
 				Serial.println(evse_params.availVoltage);
 				chademoState = CEASE_CURRENT;
 			}
@@ -291,14 +310,14 @@ void loop()
 			//on fault try to turn off current immediately and cease operation
 			if ((evse_status.status & 0x1A) != 0) //if bits 1, 3, or 4 are set then we have a problem.
 			{
-				Serial.println("EVSE reports fault. Aborting.");
+				Serial.println(F("EVSE reports fault. Aborting."));
 				if (chademoState == RUNNING) chademoState = CEASE_CURRENT;
 			}
 
 			//if there is no remaining time then gracefully shut down
 			if (evse_status.remainingChargeSeconds == 0)
 			{
-				Serial.println("EVSE reports time elapsed. Finishing.");
+				Serial.println(F("EVSE reports time elapsed. Finishing."));
 				if (chademoState == RUNNING) chademoState = CEASE_CURRENT;
 			}
 		}
@@ -329,14 +348,14 @@ void loop()
 		bChademoMode = 1;
 		if (chademoState == STOPPED && !bStartedCharge) {
 			chademoState = STARTUP;
-			Serial.println("Starting Chademo process.");
+			Serial.println(F("Starting Chademo process."));
 		}
 	}
 	else 
 	{
 		if (bChademoMode == 1) 
 		{
-			Serial.println("Stopping chademo process.");
+			Serial.println(F("Stopping chademo process."));
 		}
 		bChademoMode = 0;
 		bStartedCharge = 0;
@@ -356,7 +375,7 @@ void loop()
 			sendChademoStatus();
 			sendChademoBattSpecs();
 			sendChademoChargingTime();
-			Serial.println("Tx");
+			//Serial.println("Tx");
 		}
 
 		switch (chademoState)
@@ -371,13 +390,13 @@ void loop()
 			//the max allowable amperage just yet.
 			bChademoSendRequests = 1; //causes chademo frames to be sent out every 100ms
 			chademoState = WAIT_FOR_EVSE_PARAMS;
-			Serial.println("Sent parameters to EVSE. Waiting.");
+			Serial.println(F("Sent parameters to EVSE. Waiting."));
 			break;
 		case WAIT_FOR_EVSE_PARAMS:
 			//for now do nothing while we wait. Might want to try to resend start up messages periodically if no reply
 			break;
 		case SET_CHARGE_BEGIN:
-			Serial.println("Setting begin charge request.");
+			Serial.println(F("Setting begin charge request."));
 			digitalWrite(OUT1, HIGH); //signal that we're ready to charge
 			//carStatus.chargingEnabled = 1; //should this be enabled here???
 			chademoState = WAIT_FOR_BEGIN_CONFIRMATION;
@@ -389,7 +408,7 @@ void loop()
 			}
 			break;
 		case CLOSE_CONTACTORS:
-			Serial.println("Closing contactor");
+			Serial.println(F("Closing contactor"));
 			digitalWrite(OUT0, HIGH);
 			chademoState = RUNNING;
 			carStatus.contactorOpen = 0; //its closed now
@@ -401,7 +420,7 @@ void loop()
 			//different to the EVSE. Also monitor temperatures to make sure we're not incinerating the pack.
 			break;
 		case CEASE_CURRENT:
-			Serial.println("Setting current request to zero.");
+			Serial.println(F("Setting current request to zero."));
 			carStatus.targetCurrent = 0;
 			chademoState = WAIT_FOR_ZERO_CURRENT;
 			break;
@@ -412,7 +431,7 @@ void loop()
 			}
 			break;
 		case OPEN_CONTACTOR:
-			Serial.println("Opening contactor");
+			Serial.println(F("Opening contactor"));
 			digitalWrite(OUT0, LOW);
 			carStatus.contactorOpen = 1;
 			carStatus.chargingEnabled = 0;
@@ -420,7 +439,7 @@ void loop()
 			chademoState = STOPPED;
 			break;
 		case FAULTED:
-			Serial.println("Detected fault!");
+			Serial.println(F("Detected fault!"));
 			chademoState = CEASE_CURRENT;
 			//digitalWrite(OUT0, LOW);
 			//digitalWrite(OUT1, LOW);
@@ -436,9 +455,7 @@ void loop()
 
 void Save()
 {
-	EEPROM_writeAnything(ADDR_AmpHours, AmpHours);
-	EEPROM_writeAnything(ADDR_KiloWattHours, KiloWattHours);
-	EEPROM_writeAnything(ADDR_VoltageCalibration, VoltageCalibration);
+	EEPROM_writeAnything(0, settings);
 }  
 
 void USB()
@@ -447,30 +464,30 @@ void USB()
   Serial.print ("V ");
   Serial.print (Current, 2);    
   Serial.print ("A ");
-  Serial.print (AmpHours, 1);    
+  Serial.print (settings.ampHours, 1);    
   Serial.print ("Ah ");
   Serial.print (Power, 1);        
   Serial.print ("kW ");
-  Serial.print (KiloWattHours, 1);    
+  Serial.print (settings.kiloWattHours, 1);    
   Serial.println ("kWh");
   if (Serial.available() > 0)
   {Command = Serial.read();
    if (Command == 'z')
      {
       Serial.println("Reset Ah & Wh");
-      AmpHours = 0;
-      KiloWattHours = 0;
+	  settings.ampHours = 0.0;
+	  settings.kiloWattHours = 0.0;
       Serial.println("Done!!!"); 
     }
      if (Command == '+')
      {
-      VoltageCalibration +=0.004;
-      Serial.println (VoltageCalibration, 5);   
+		settings.voltageCalibration +=0.004;
+		Serial.println (settings.voltageCalibration, 5);   
     }
      if (Command == '-')
      {
-      VoltageCalibration -=0.004;
-      Serial.println (VoltageCalibration, 5);   
+		settings.voltageCalibration -=0.004;
+		Serial.println (settings.voltageCalibration, 5);   
     }
    while(Serial.available()>0) Serial.read();}
 }
@@ -482,11 +499,11 @@ void BT()
   BTSerial.print ("V ");
   BTSerial.print (Current, 2);    
   BTSerial.print ("A ");
-  BTSerial.print (AmpHours, 1);    
+  BTSerial.print (settings.ampHours, 1);    
   BTSerial.print ("Ah ");
   BTSerial.print (Power, 1);        
   BTSerial.print ("kW ");
-  BTSerial.print (KiloWattHours, 1);    
+  BTSerial.print (settings.kiloWattHours, 1);    
   BTSerial.println ("kWh");
 	
   /*
@@ -503,34 +520,37 @@ void BT()
   BTSerial.write(lowByte((int)(KiloWattHours*10)));
   BTSerial.write(03);*/
   
-  if (BTSerial.available() > 0)
-  {Command = BTSerial.read();
-   if (Command == 'z')
-   {AmpHours = 0;
-    KiloWattHours = 0;}
-   while(BTSerial.available()>0) BTSerial.read();}
-   
+	if (BTSerial.available() > 0)
+	{
+		Command = BTSerial.read();
+		if (Command == 'z')
+		{
+			settings.ampHours = 0.0;
+			settings.kiloWattHours = 0.0;
+		}
+		while(BTSerial.available()>0) BTSerial.read();
+	}
 }
 
 void CANBUS()
 {
 	canMsgID = 0x404;
-	canMsg[0] = highByte((int)(Voltage*10)); // Voltage High Byte
-	canMsg[1] = lowByte((int)(Voltage*10)); // Voltage Low Byte
-	canMsg[2] = highByte((int)(Current*10)); // Current High Byte
-	canMsg[3] = lowByte((int)(Current*10)); // Current Low Byte
-	canMsg[4] = highByte((int)(AmpHours*10)); // AmpHours High Byte
-	canMsg[5] = lowByte((int)(AmpHours*10)); // AmpHours Low Byte
+	canMsg[0] = highByte((int)(Voltage * 10)); // Voltage High Byte
+	canMsg[1] = lowByte((int)(Voltage * 10)); // Voltage Low Byte
+	canMsg[2] = highByte((int)(Current * 10)); // Current High Byte
+	canMsg[3] = lowByte((int)(Current * 10)); // Current Low Byte
+	canMsg[4] = highByte((int)(settings.ampHours * 10)); // AmpHours High Byte
+	canMsg[5] = lowByte((int)(settings.ampHours * 10)); // AmpHours Low Byte
 	canMsg[6] = 0x00; // Not Used
 	canMsg[7] = 0x00; // Not Used
 	CAN.sendMsgBuf(canMsgID, 0, 6, canMsg);
 	
   
 	canMsgID = 0x505;
-	canMsg[0] = highByte((int)(Power*10)); // Power High Byte
-	canMsg[1] = lowByte((int)(Power*10)); // Power Low Byte
-	canMsg[2] = highByte((int)(KiloWattHours*10)); // KiloWattHours High Byte
-	canMsg[3] = lowByte((int)(KiloWattHours*10)); // KiloWattHours Low Byte
+	canMsg[0] = highByte((int)(Power * 10)); // Power High Byte
+	canMsg[1] = lowByte((int)(Power * 10)); // Power Low Byte
+	canMsg[2] = highByte((int)(settings.kiloWattHours * 10)); // KiloWattHours High Byte
+	canMsg[3] = lowByte((int)(settings.kiloWattHours * 10)); // KiloWattHours Low Byte
 	canMsg[4] = 0x00; // Not Used
 	canMsg[5] = 0x00; // Not Used
 	canMsg[6] = 0x00; // Not Used
