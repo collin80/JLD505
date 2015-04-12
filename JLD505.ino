@@ -50,6 +50,7 @@ unsigned char canMsg[8];
 unsigned char Flag_Recv = 0;
 
 //Bunch o' chademo related stuff. 
+uint8_t bStartedCharge = 0;
 uint8_t bChademoMode = 0; //accessed but not modified in ISR so it should be OK non-volatile
 uint8_t bChademoSendRequests = 0; //should we be sending periodic status updates?
 volatile uint8_t bChademoRequest = 0;  //is it time to send one of those updates?
@@ -182,6 +183,7 @@ void setup()
 	pinMode(A1, OUTPUT); //KEY - Must be HIGH
 	pinMode(A0, INPUT); //STATE
 	digitalWrite(A1, HIGH);
+	pinMode(3, INPUT_PULLUP); //enable weak pull up on MCP2515 int pin connected to INT1 on MCU
 
 	Serial.begin(115200);
 	BTSerial.begin(115200);
@@ -325,7 +327,7 @@ void loop()
 	if (!digitalRead(IN1)) //IN1 goes low if we have been plugged into the chademo port
 	{
 		bChademoMode = 1;
-		if (chademoState == STOPPED) {
+		if (chademoState == STOPPED && !bStartedCharge) {
 			chademoState = STARTUP;
 			Serial.println("Starting Chademo process.");
 		}
@@ -337,6 +339,7 @@ void loop()
 			Serial.println("Stopping chademo process.");
 		}
 		bChademoMode = 0;
+		bStartedCharge = 0;
 		chademoState = STOPPED;
 		//maybe it would be a good idea to try to see if EVSE is still transmitting to us and providing current
 		//as it is not a good idea to open the contactors under load. But, IN1 shouldn't trigger 
@@ -391,6 +394,7 @@ void loop()
 			chademoState = RUNNING;
 			carStatus.contactorOpen = 0; //its closed now
 			carStatus.chargingEnabled = 1; //please sir, I'd like some charge
+			bStartedCharge = 1;
 			break;
 		case RUNNING:
 			//do processing here by taking our measured voltage, amperage, and SOC to see if we should be commanding something
