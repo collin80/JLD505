@@ -250,9 +250,9 @@ void loop()
 	}
 
 	if (Flag_Recv || CAN.checkReceive() == CAN_MSGAVAIL) {
-		Flag_Recv = 0;
-		canMsgID = CAN.getCanId();
+		Flag_Recv = 0;		
 		CAN.readMsgBuf(&len, canMsg);            // read data,  len: data length, buf: data buf
+		canMsgID = CAN.getCanId();
 		if (canMsgID == EVSE_PARAMS)
 		{
 			if (chademoState == WAIT_FOR_EVSE_PARAMS) chademoState = SET_CHARGE_BEGIN;
@@ -264,6 +264,8 @@ void loop()
 			//if charger cannot provide our requested voltage then GTFO
 			if (evse_params.availVoltage < carStatus.targetVoltage)
 			{
+				Serial.println("EVSE can't provide needed voltage. Aborting.");
+				Serial.println(evse_params.availVoltage);
 				chademoState = CEASE_CURRENT;
 			}
 
@@ -287,12 +289,14 @@ void loop()
 			//on fault try to turn off current immediately and cease operation
 			if ((evse_status.status & 0x1A) != 0) //if bits 1, 3, or 4 are set then we have a problem.
 			{
+				Serial.println("EVSE reports fault. Aborting.");
 				if (chademoState == RUNNING) chademoState = CEASE_CURRENT;
 			}
 
 			//if there is no remaining time then gracefully shut down
 			if (evse_status.remainingChargeSeconds == 0)
 			{
+				Serial.println("EVSE reports time elapsed. Finishing.");
 				if (chademoState == RUNNING) chademoState = CEASE_CURRENT;
 			}
 		}
