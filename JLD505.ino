@@ -249,7 +249,7 @@ void loop()
 		//}		
 	}
 
-	if (Flag_Recv) {
+	if (Flag_Recv || CAN.checkReceive() == CAN_MSGAVAIL) {
 		Flag_Recv = 0;
 		canMsgID = CAN.getCanId();
 		CAN.readMsgBuf(&len, canMsg);            // read data,  len: data length, buf: data buf
@@ -262,13 +262,13 @@ void loop()
 			evse_params.thresholdVoltage = canMsg[4] + canMsg[5] * 256;
 
 			//if charger cannot provide our requested voltage then GTFO
-			if (evse_params.availVoltage < targetVoltage)
+			if (evse_params.availVoltage < carStatus.targetVoltage)
 			{
 				chademoState = CEASE_CURRENT;
 			}
 
 			//if we want more current then it can provide then revise our request to match max output
-			if (evse_params.availCurrent < targetAmperage) targetAmperage = evse_params.availCurrent;
+			if (evse_params.availCurrent < carStatus.targetCurrent) carStatus.targetCurrent = evse_params.availCurrent;
 		}
 		if (canMsgID == EVSE_STATUS)
 		{
