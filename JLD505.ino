@@ -279,6 +279,35 @@ void loop()
 			chademoState = CEASE_CURRENT;
 		}
 
+                //Constant Current/Constant Voltage Taper checks.  If minimum current is set to zero, we terminate once target voltage is reached.
+                //If not zero, we will adjust current up or down as needed to maintain voltage until current decreases to the minimum entered
+                
+                if(Count==20)  //To allow batteries time to react, we only do this once in 50 counts
+                  {
+                    if (chademoState == RUNNING && Voltage > settings.targetChargeVoltage) //All initializations complete and we're running.We've reached charging target
+                      {
+                        if (settings.minChargeAmperage >0)  //If our minChargeAmperage is zero, we're done. Goto ELSE and Terminate charge
+                          {
+                            carStatus.targetCurrent--;  //Taper. Actual decrease occurs in sendChademoStatus
+                            if (carStatus.targetCurrent < settings.minChargeAmperage) {chademoState = CEASE_CURRENT;} //If we match minimum, its all over. Terminate
+                          }
+                       else {chademoState = CEASE_CURRENT;}
+                      }
+                   }
+
+                  
+                  if(Count==40)  //To allow batteries time to react, we only do this once in 50 counts
+                    {
+                      if (chademoState == RUNNING && Voltage < settings.targetChargeVoltage) //All initializations complete and we're running.We're under charging target
+                        {
+                          if (carStatus.targetCurrent < settings.maxChargeAmperage)  //Only adjust upward if we have previous adjusted downward and do not exceed max amps
+                            {
+                              carStatus.targetCurrent++;  // Increase current to adjust constant voltage back up.
+                            } 
+                        }                  
+                    }
+             
+                  
 		//if (!bChademoMode) 
 		//{
 			if (Count >= 50)
