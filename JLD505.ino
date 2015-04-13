@@ -258,25 +258,28 @@ void loop()
 		Power = Voltage * Current / 1000.0;
 		settings.kiloWattHours += Power * (float)Time / 1000.0 / 3600.0;
 
-		if (abs(Voltage - evse_status.presentVoltage) > 7 && !carStatus.voltDeviation)
+		if (chademoState == RUNNING)
 		{
-			Serial.println(F("Voltage mismatch! Aborting!"));
-			carStatus.voltDeviation = 1;
-			chademoState = CEASE_CURRENT;
-		}
+			if (abs(Voltage - evse_status.presentVoltage) > 7 && !carStatus.voltDeviation)
+			{
+				Serial.println(F("Voltage mismatch! Aborting!"));
+				carStatus.voltDeviation = 1;
+				chademoState = CEASE_CURRENT;
+			}
 
-		if (abs(Current - evse_status.presentCurrent) > 7 && !carStatus.currDeviation)
-		{
-			Serial.println(F("Current mismatch! Aborting!"));
-			carStatus.currDeviation = 1;
-			chademoState = CEASE_CURRENT;
-		}
+			if (abs(Current - evse_status.presentCurrent) > 7 && !carStatus.currDeviation)
+			{
+				Serial.println(F("Current mismatch! Aborting!"));
+				carStatus.currDeviation = 1;
+				chademoState = CEASE_CURRENT;
+			}
 
-		if (Voltage > settings.maxChargeVoltage)
-		{
-			Serial.println(F("Over voltage fault!"));
-			carStatus.battOverVolt = 1;
-			chademoState = CEASE_CURRENT;
+			if (Voltage > settings.maxChargeVoltage)
+			{
+				Serial.println(F("Over voltage fault!"));
+				carStatus.battOverVolt = 1;
+				chademoState = CEASE_CURRENT;
+			}
 		}
 
                 //Constant Current/Constant Voltage Taper checks.  If minimum current is set to zero, we terminate once target voltage is reached.
@@ -307,12 +310,6 @@ void loop()
                         }                  
                     }
              
-<<<<<<< HEAD
-                  
-=======
-
-
->>>>>>> origin/master
 		//if (!bChademoMode) 
 		//{
 			if (Count >= 50)
