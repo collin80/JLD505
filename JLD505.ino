@@ -307,7 +307,12 @@ void loop()
                         }                  
                     }
              
+<<<<<<< HEAD
                   
+=======
+
+
+>>>>>>> origin/master
 		//if (!bChademoMode) 
 		//{
 			if (Count >= 50)
