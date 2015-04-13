@@ -16,6 +16,13 @@ AltSoftSerial altSerial; //pins 8 and 9
 DS2480B ds(altSerial);
 DallasTemperature sensors(&ds);
 
+//These have been moved to eeprom. After initial compile the values will be read from EEPROM.
+//These thus set the default value to write to eeprom upon first start up
+#define MAX_CHARGE_V	180
+#define MAX_CHARGE_A	120
+#define TARGET_CHARGE_V	170
+#define MIN_CHARGE_A	10
+
 //set the proper digital pins for these
 #define IN0		4
 #define IN1		7
@@ -212,10 +219,10 @@ void setup()
 		settings.currentCalibration = 300.0/0.075; //800A 75mv shunt
 		settings.voltageCalibration = (100000.0*830000.0/930000.0+1000000.0)/(100275.0*830000.0/930000.0); // (Voltage Divider with (100k in parallel with 830k) and 1M )
 		settings.packSizeKWH = 15.0; //just a random guess. Maybe it should default to zero though?
-		settings.maxChargeAmperage = 120;
-		settings.maxChargeVoltage = 180;
-		settings.targetChargeVoltage = 160;
-		settings.minChargeAmperage = 10;
+		settings.maxChargeAmperage = MAX_CHARGE_A;
+		settings.maxChargeVoltage = MAX_CHARGE_V;
+		settings.targetChargeVoltage = TARGET_CHARGE_V;
+		settings.minChargeAmperage = MIN_CHARGE_A;
 		EEPROM_writeAnything(0, settings);
 	}
 
@@ -253,15 +260,22 @@ void loop()
 
 		if (abs(Voltage - evse_status.presentVoltage) > 7 && !carStatus.voltDeviation)
 		{
-			Serial.println("Voltage mismatch! Aborting!");
+			Serial.println(F("Voltage mismatch! Aborting!"));
 			carStatus.voltDeviation = 1;
 			chademoState = CEASE_CURRENT;
 		}
 
 		if (abs(Current - evse_status.presentCurrent) > 7 && !carStatus.currDeviation)
 		{
-			Serial.println("Current mismatch! Aborting!");
+			Serial.println(F("Current mismatch! Aborting!"));
 			carStatus.currDeviation = 1;
+			chademoState = CEASE_CURRENT;
+		}
+
+		if (Voltage > settings.maxChargeVoltage)
+		{
+			Serial.println(F("Over voltage fault!"));
+			carStatus.battOverVolt = 1;
 			chademoState = CEASE_CURRENT;
 		}
 
