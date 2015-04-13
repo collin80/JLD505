@@ -251,6 +251,20 @@ void loop()
 		Power = Voltage * Current / 1000.0;
 		settings.kiloWattHours += Power * (float)Time / 1000.0 / 3600.0;
 
+		if (abs(Voltage - evse_status.presentVoltage) > 7 && !carStatus.voltDeviation)
+		{
+			Serial.println("Voltage mismatch! Aborting!");
+			carStatus.voltDeviation = 1;
+			chademoState = CEASE_CURRENT;
+		}
+
+		if (abs(Current - evse_status.presentCurrent) > 7 && !carStatus.currDeviation)
+		{
+			Serial.println("Current mismatch! Aborting!");
+			carStatus.currDeviation = 1;
+			chademoState = CEASE_CURRENT;
+		}
+
 		//if (!bChademoMode) 
 		//{
 			if (Count >= 50)
@@ -354,6 +368,16 @@ void loop()
 		if (chademoState == STOPPED && !bStartedCharge) {
 			chademoState = STARTUP;
 			Serial.println(F("Starting Chademo process."));
+			carStatus.battOverTemp = 0;
+			carStatus.battOverVolt = 0;
+			carStatus.battUnderVolt = 0;
+			carStatus.chargingFault = 0;
+			carStatus.chargingEnabled = 0;
+			carStatus.contactorOpen = 1;
+			carStatus.currDeviation = 0;
+			carStatus.notParked = 0;
+			carStatus.stopRequest = 0;
+			carStatus.voltDeviation = 0;
 		}
 	}
 	else 
