@@ -371,18 +371,21 @@ void loop()
 				Serial.println(F("EVSE reports fault. Aborting."));
 				if (chademoState == RUNNING) chademoState = CEASE_CURRENT;
 			}
-
-			if ((evse_status.status & EVSE_STATUS_STOPPED) != 0)
+			
+			if (chademoState == RUNNING)
 			{
-				Serial.println(F("EVSE requests we stop charging."));
-				if (chademoState == RUNNING) chademoState = CEASE_CURRENT;
-			}
+				if ((evse_status.status & EVSE_STATUS_STOPPED) != 0)
+				{
+					Serial.println(F("EVSE requests we stop charging."));
+					chademoState = CEASE_CURRENT;
+				}
 
-			//if there is no remaining time then gracefully shut down
-			if (evse_status.remainingChargeSeconds == 0)
-			{
-				Serial.println(F("EVSE reports time elapsed. Finishing."));
-				if (chademoState == RUNNING) chademoState = CEASE_CURRENT;
+				//if there is no remaining time then gracefully shut down
+				if (evse_status.remainingChargeSeconds == 0)
+				{
+					Serial.println(F("EVSE reports time elapsed. Finishing."));
+					chademoState = CEASE_CURRENT;
+				}
 			}
 		}
 	}
