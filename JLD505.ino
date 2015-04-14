@@ -24,8 +24,8 @@ DallasTemperature sensors(&ds);
 #define MIN_CHARGE_A	10
 
 //set the proper digital pins for these
-#define IN0		4
-#define IN1		7
+#define IN0	4
+#define IN1	7
 #define OUT0	5
 #define OUT1	6
 
@@ -66,6 +66,7 @@ EESettings settings;
 #define EEPROM_VALID	0xDE
 
 //Bunch o' chademo related stuff. 
+uint8_t chademoPlugInsert = 0;
 uint8_t bStartedCharge = 0;
 uint8_t bChademoMode = 0; //accessed but not modified in ISR so it should be OK non-volatile
 uint8_t bChademoSendRequests = 0; //should we be sending periodic status updates?
@@ -409,8 +410,17 @@ void loop()
 		}
 	}
 
-	//Danger Will Robinson. There is no debouncing here. That might be naughty.
 	if (!digitalRead(IN1)) //IN1 goes low if we have been plugged into the chademo port
+	{
+		chademoPlugInsert++;
+		if (chademoPlugInsert > 50) chademoPlugInsert = 50;
+	}
+	else
+	{
+		if (chademoPlugInsert > 0) chademoPlugInsert--;
+	}
+
+	if (chademoPlugInsert > 40 && bChademoMode == 0)
 	{
 		bChademoMode = 1;
 		if (chademoState == STOPPED && !bStartedCharge) {
@@ -428,12 +438,9 @@ void loop()
 			carStatus.voltDeviation = 0;
 		}
 	}
-	else 
+	if (chademoPlugInsert < 30 && bChademoMode == 1)
 	{
-		if (bChademoMode == 1) 
-		{
-			Serial.println(F("Stopping chademo process."));
-		}
+		Serial.println(F("Stopping chademo process."));
 		bChademoMode = 0;
 		bStartedCharge = 0;
 		chademoState = STOPPED;
