@@ -73,7 +73,6 @@ EESettings settings;
 #define EEPROM_VALID	0xDE
 
 //Bunch o' chademo related stuff. 
-uint8_t chademoPlugInsert = 0;
 uint8_t bStartedCharge = 0;
 uint8_t bChademoMode = 0; //accessed but not modified in ISR so it should be OK non-volatile
 uint8_t bChademoSendRequests = 0; //should we be sending periodic status updates?
@@ -83,6 +82,7 @@ uint8_t askingAmps = 0; //how many amps to ask for. Trends toward targetAmperage
 uint8_t bDoMismatchChecks = 0;
 uint32_t mismatchStart;
 uint32_t stateMilli;
+uint32_t insertionTime = 0;
 enum CHADEMOSTATE 
 {
 	STARTUP,
@@ -452,44 +452,48 @@ void loop()
 
 	if (!digitalRead(IN1)) //IN1 goes low if we have been plugged into the chademo port
 	{
-		chademoPlugInsert++;
-		if (chademoPlugInsert > 50) chademoPlugInsert = 50;
-		else delay(1);
+		if (insertionTime == 0)
+		{
+			insertionTime = millis();
+		}
+		else if (millis() > insertionTime + 500)
+		{
+			if (bChademoMode == 0)
+			{
+				bChademoMode = 1;
+				if (chademoState == STOPPED && !bStartedCharge) {
+					chademoState = STARTUP;
+					Serial.println(F("Starting Chademo process."));
+					carStatus.battOverTemp = 0;
+					carStatus.battOverVolt = 0;
+					carStatus.battUnderVolt = 0;
+					carStatus.chargingFault = 0;
+					carStatus.chargingEnabled = 0;
+					carStatus.contactorOpen = 1;
+					carStatus.currDeviation = 0;
+					carStatus.notParked = 0;
+					carStatus.stopRequest = 0;
+					carStatus.voltDeviation = 0;
+				}
+			}
+		}
 	}
 	else
 	{
-		if (chademoPlugInsert > 0) chademoPlugInsert--;
-	}
-
-	if (chademoPlugInsert > 40 && bChademoMode == 0)
-	{
-		bChademoMode = 1;
-		if (chademoState == STOPPED && !bStartedCharge) {
-			chademoState = STARTUP;
-			Serial.println(F("Starting Chademo process."));
-			carStatus.battOverTemp = 0;
-			carStatus.battOverVolt = 0;
-			carStatus.battUnderVolt = 0;
-			carStatus.chargingFault = 0;
-			carStatus.chargingEnabled = 0;
-			carStatus.contactorOpen = 1;
-			carStatus.currDeviation = 0;
-			carStatus.notParked = 0;
-			carStatus.stopRequest = 0;
-			carStatus.voltDeviation = 0;
+		insertionTime = 0;
+		if (bChademoMode == 1)
+		{
+			Serial.println(F("Stopping chademo process."));
+			bChademoMode = 0;
+			bStartedCharge = 0;
+			chademoState = STOPPED;
+			//maybe it would be a good idea to try to see if EVSE is still transmitting to us and providing current
+			//as it is not a good idea to open the contactors under load. But, IN1 shouldn't trigger 
+			//until the EVSE is ready. Also, the EVSE should have us locked so the only way the plug should come out under
+			//load is if the idiot driver took off in the car. Bad move moron.
+			digitalWrite(OUT0, LOW);
+			digitalWrite(OUT1, LOW);
 		}
-	}
-	if (chademoPlugInsert < 30 && bChademoMode == 1)
-	{
-		Serial.println(F("Stopping chademo process."));
-		bChademoMode = 0;
-		bStartedCharge = 0;
-		chademoState = STOPPED;
-		//maybe it would be a good idea to try to see if EVSE is still transmitting to us and providing current
-		//as it is not a good idea to open the contactors under load. But, IN1 shouldn't trigger 
-		//until the EVSE is ready. Investigate options here.
-		digitalWrite(OUT0, LOW);
-		digitalWrite(OUT1, LOW);
 	}
 
 	if (bChademoMode)
