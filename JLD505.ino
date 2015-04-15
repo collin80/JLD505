@@ -10,6 +10,8 @@
 #include <DallasTemperature.h>
 #include <FrequencyTimer2.h>
 
+template<class T> inline Print &operator <<(Print &obj, T arg) { obj.print(arg); return obj; } //Sets up serial streaming Serial<<someshit;
+
 SoftwareSerial BTSerial(A2, A3); // RX | TX
 AltSoftSerial altSerial; //pins 8 and 9
 
@@ -327,11 +329,17 @@ void loop()
 			evse_params.availVoltage = canMsg[1] + canMsg[2] * 256;
 			evse_params.availCurrent = canMsg[3];			
 			evse_params.thresholdVoltage = canMsg[4] + canMsg[5] * 256;
-
-			//if charger cannot provide our requested voltage then GTFO
+                        Serial.print(F("EVSE: MaxVoltage: "));
+                        Serial.print(evse_params.availVoltage);
+                        Serial.print(F(" Max Current:"));
+                        Serial.print(evse_params.availCurrent);
+                        Serial.print(F(" Threshold Voltage:"));
+                        Serial.print(evse_params.thresholdVoltage);
+                        timestamp();
+               	//if charger cannot provide our requested voltage then GTFO
 			if (evse_params.availVoltage < carStatus.targetVoltage)
 			{
-				Serial.println(F("EVSE can't provide needed voltage. Aborting."));
+				Serial.print(F("EVSE can't provide needed voltage. Aborting."));
 				Serial.println(evse_params.availVoltage);
 				chademoState = CEASE_CURRENT;
 			}
@@ -353,10 +361,21 @@ void loop()
 				evse_status.remainingChargeSeconds = canMsg[7] * 60;
 			}
 
+                        Serial.print(F("EVSE: Measured Voltage: "));
+                        Serial.print(evse_status.presentVoltage);
+                        Serial.print(F(" Current: "));
+                        Serial.print(evse_status.presentCurrent);
+                        Serial.print(F(" Time remaining: "));
+                        Serial.print(evse_status.remainingChargeSeconds);
+                        Serial.print(F(" Status: "));
+                        Serial.print(evse_status.status,BIN);
+                         timestamp();
+                   
+
 			//on fault try to turn off current immediately and cease operation
 			if ((evse_status.status & 0x1A) != 0) //if bits 1, 3, or 4 are set then we have a problem.
 			{
-				Serial.println(F("EVSE reports fault. Aborting."));
+				Serial.println(F("EVSE:fault! Abort."));
 				if (chademoState == RUNNING) chademoState = CEASE_CURRENT;
 			}
 			
@@ -364,14 +383,14 @@ void loop()
 			{
 				if ((evse_status.status & EVSE_STATUS_STOPPED) != 0)
 				{
-					Serial.println(F("EVSE requests we stop charging."));
+					Serial.println(F("EVSE:stop charging."));
 					chademoState = CEASE_CURRENT;
 				}
 
 				//if there is no remaining time then gracefully shut down
 				if (evse_status.remainingChargeSeconds == 0)
 				{
-					Serial.println(F("EVSE reports time elapsed. Finishing."));
+					Serial.println(F("EVSE:time elapsed..Ending"));
 					chademoState = CEASE_CURRENT;
 				}
 			}
@@ -429,7 +448,10 @@ void loop()
 		//as it is not a good idea to open the contactors under load. But, IN1 shouldn't trigger 
 		//until the EVSE is ready. Investigate options here.
 		digitalWrite(OUT0, LOW);
+                Serial<<"CAR: Contactor open\n";
 		digitalWrite(OUT1, LOW);
+                Serial<<"CAR: Charge Enable OFF\n";
+		
 	}
 
 	if (bChademoMode)
@@ -455,13 +477,13 @@ void loop()
 			//the max allowable amperage just yet.
 			bChademoSendRequests = 1; //causes chademo frames to be sent out every 100ms
 			chademoState = WAIT_FOR_EVSE_PARAMS;
-			Serial.println(F("Sent parameters to EVSE. Waiting."));
+			Serial.println(F("Sent params to EVSE. Waiting."));
 			break;
 		case WAIT_FOR_EVSE_PARAMS:
 			//for now do nothing while we wait. Might want to try to resend start up messages periodically if no reply
 			break;
 		case SET_CHARGE_BEGIN:
-			Serial.println(F("Setting begin charge request."));
+			Serial.println(F("CAR:Charge enable ON"));
 			digitalWrite(OUT1, HIGH); //signal that we're ready to charge
 			//carStatus.chargingEnabled = 1; //should this be enabled here???
 			chademoState = WAIT_FOR_BEGIN_CONFIRMATION;
@@ -473,7 +495,7 @@ void loop()
 			}
 			break;
 		case CLOSE_CONTACTORS:
-			Serial.println(F("Closing contactor"));
+			Serial.println(F("CAR:Contactor close."));
 			digitalWrite(OUT0, HIGH);
 			chademoState = RUNNING;
 			carStatus.contactorOpen = 0; //its closed now
@@ -485,7 +507,7 @@ void loop()
 			//different to the EVSE. Also monitor temperatures to make sure we're not incinerating the pack.
 			break;
 		case CEASE_CURRENT:
-			Serial.println(F("Setting current request to zero."));
+			Serial.println(F("CAR:Current req to 0"));
 			carStatus.targetCurrent = 0;
 			chademoState = WAIT_FOR_ZERO_CURRENT;
 			break;
@@ -496,7 +518,7 @@ void loop()
 			}
 			break;
 		case OPEN_CONTACTOR:
-			Serial.println(F("Opening contactor"));
+			Serial.println(F("CAR:Contactor OPEN"));
 			digitalWrite(OUT0, LOW);
 			carStatus.contactorOpen = 1;
 			carStatus.chargingEnabled = 0;
@@ -504,14 +526,16 @@ void loop()
 			chademoState = STOPPED;
 			break;
 		case FAULTED:
-			Serial.println(F("Detected fault!"));
+			Serial.println(F("CAR: fault!"));
 			chademoState = CEASE_CURRENT;
 			//digitalWrite(OUT0, LOW);
 			//digitalWrite(OUT1, LOW);
 			break;
 		case STOPPED:
 			digitalWrite(OUT0, LOW);
+                        Serial.println(F("CAR:Contactor OPEN"));
 			digitalWrite(OUT1, LOW);
+                        Serial.println(F("CAR:Charge Enable OFF"));
 			bChademoSendRequests = 0; //don't need to keep sending anymore.
 			break;
 		}
@@ -636,6 +660,13 @@ void sendChademoBattSpecs()
 	canMsg[6] = (uint8_t)settings.packSizeKWH;
 	canMsg[7] = 0; //not used
 	CAN.sendMsgBuf(canMsgID, 0, 8, canMsg);
+
+             Serial.print(F("CAR: Absolute MAX Voltage:"));
+             Serial.print(settings.maxChargeVoltage);
+             Serial.print(F(" Pack size: "));
+             Serial.print(settings.packSizeKWH);
+             timestamp();
+                 
 }
 
 void sendChademoChargingTime()
@@ -680,6 +711,20 @@ void sendChademoStatus()
 	canMsg[6] = (uint8_t)settings.kiloWattHours;
 	canMsg[7] = 0; //not used
 	CAN.sendMsgBuf(canMsgID, 0, 8, canMsg);
+             Serial.print(F("CAR: Protocol:"));
+             Serial.print(canMsg[0]);
+             Serial.print(F(" Target Voltage: "));
+             Serial.print(carStatus.targetVoltage);
+             Serial.print(F(" Current Command: "));
+             Serial.print(askingAmps);
+             Serial.print(F(" Faults: "));
+             Serial.print(faults,BIN);
+             Serial.print(F(" Status: "));
+             Serial.print(status,BIN);
+             Serial.print(F(" kWh: "));
+             Serial.print(settings.kiloWattHours);
+             timestamp();
+                 
 	if (chademoState == RUNNING &&  askingAmps < carStatus.targetCurrent) askingAmps++;
 	//not a typo. We're allowed to change requested amps by +/- 20A per second. We send the above frame every 100ms so a single
 	//increment means we can ramp up 10A per second. But, we want to ramp down quickly if there is a problem so do two which
@@ -687,4 +732,23 @@ void sendChademoStatus()
 	if (chademoState != RUNNING && askingAmps > 0) askingAmps--;
 	if (askingAmps > carStatus.targetCurrent) askingAmps--;
 	if (askingAmps > carStatus.targetCurrent) askingAmps--;
+}
+
+void timestamp()
+{
+   int milliseconds = (int) (millis()/1) %1000 ;
+        int seconds = (int) (millis() / 1000) % 60 ;
+        int minutes = (int) ((millis() / (1000*60)) % 60);
+        int hours   = (int) ((millis() / (1000*60*60)) % 24);
+        
+        
+         Serial.print(F(" Time:"));
+         Serial.print(hours);
+         Serial.print(F(":"));
+         Serial.print(minutes);
+         Serial.print(F(":"));
+         Serial.print(seconds);
+         Serial.print(F("."));
+         Serial.println(milliseconds);
+        
 }
