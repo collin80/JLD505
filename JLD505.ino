@@ -361,7 +361,7 @@ void loop()
 				if (!bChademoMode) BT();
 				else 
 				{
-					Serial.print(F("Chamdemo Mode: "));
+					Serial.print(F("Chademo Mode: "));
 					Serial.println(chademoState);
 				}
 				Save();
