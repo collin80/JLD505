@@ -9,6 +9,14 @@
 #include <DS2480B.h>
 #include <DallasTemperature.h>
 #include <FrequencyTimer2.h>
+/*
+Notes on what needs to be done:
+1. Need to delay transitions a bit to slow down process
+2. Need to investigate timing issue
+3. Need to wait a bit after starting charge before doing mismatch checks
+*/
+
+#define DEBUG_TIMING	//if this is defined you'll get time related debugging messages
 
 SoftwareSerial BTSerial(A2, A3); // RX | TX
 AltSoftSerial altSerial; //pins 8 and 9
@@ -24,8 +32,8 @@ DallasTemperature sensors(&ds);
 #define MIN_CHARGE_A	10
 
 //set the proper digital pins for these
-#define IN0	4
-#define IN1	7
+#define IN0		4
+#define IN1		7
 #define OUT0	5
 #define OUT1	6
 
@@ -48,7 +56,7 @@ uint8_t tempSensorCount = 0;
 int32_t canMsgID = 0;
 unsigned char canMsg[8];
 unsigned char Flag_Recv = 0;
-
+volatile uint8_t debugTick = 0;
 typedef struct
 {
 	uint8_t valid; //a token to store EEPROM version and validity. If it matches expected value then EEPROM is not reset to defaults
@@ -148,7 +156,7 @@ CARSIDE_STATUS carStatus;
 #define CARSIDE_STATUS_CHSTOP	16 //charger stop before even charging
 
 #define EVSE_STATUS_CHARGE		1 //charger is active
-#define EVSE_STATUS_ERR		2 //something went wrong
+#define EVSE_STATUS_ERR			2 //something went wrong
 #define EVSE_STATUS_CONNLOCK	4 //connector is currently locked
 #define EVSE_STATUS_INCOMPAT	8 //parameters between vehicle and charger not compatible
 #define EVSE_STATUS_BATTERR		16 //something wrong with battery?!
@@ -162,8 +170,9 @@ void MCP2515_ISR()
 void timer2Int()
 {
 	timerFastCounter++;
-	if (timerFastCounter == 4)
+	if (timerFastCounter == 8)
 	{
+		debugTick = 1;
 		if (bChademoMode  && bChademoSendRequests) bChademoRequest = 1;
 		timerFastCounter = 0;
 		timerIntCounter++;
@@ -246,6 +255,14 @@ void loop()
 	uint8_t pos;
 	CurrentMillis = millis();
 	uint8_t len;
+
+#ifdef DEBUG_TIMING
+	if (debugTick == 1)
+	{
+		debugTick = 0;
+		Serial.println(millis());
+	}
+#endif 
  
 	if(CurrentMillis - PreviousMillis >= Interval)
 	{
