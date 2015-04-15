@@ -735,7 +735,7 @@ void sendChademoStatus()
 	if (carStatus.stopRequest) status |= CARSIDE_STATUS_CHSTOP;
 
 	canMsgID = CARSIDE_CONTROL;
-	canMsg[0] = 1; //claim to only support the chademo 0.9 protocol. It's safer/easier that way
+	canMsg[0] = 2; //tell EVSE we are talking 1.0 protocol
 	canMsg[1] = lowByte(carStatus.targetVoltage);
 	canMsg[2] = highByte(carStatus.targetVoltage);
 	canMsg[3] = askingAmps;
