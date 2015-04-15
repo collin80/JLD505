@@ -73,13 +73,14 @@ EESettings settings;
 #define EEPROM_VALID	0xDE
 
 //Bunch o' chademo related stuff. 
-uint8_t bStartedCharge = 0;
+uint8_t bStartedCharge = 0; //we have started a charge since the plug was inserted. Prevents attempts to restart charging if it stopped previously
 uint8_t bChademoMode = 0; //accessed but not modified in ISR so it should be OK non-volatile
 uint8_t bChademoSendRequests = 0; //should we be sending periodic status updates?
 volatile uint8_t bChademoRequest = 0;  //is it time to send one of those updates?
 //target values are what we send with periodic frames and can be changed.
 uint8_t askingAmps = 0; //how many amps to ask for. Trends toward targetAmperage
-uint8_t bDoMismatchChecks = 0;
+uint8_t bListenEVSEStatus = 0; //should we pay attention to stop requests and such yet?
+uint8_t bDoMismatchChecks = 0; //should we be checking for voltage and current mismatches?
 uint32_t mismatchStart;
 uint32_t stateMilli;
 uint32_t insertionTime = 0;
@@ -343,9 +344,12 @@ void loop()
 			if (Count >= 50)
 			{
 				Count = 0;
-				USB();				
-				CANBUS();
-				if (!bChademoMode) BT();
+				USB();												
+				if (!bChademoMode) //save some processor time by not doing these in chademo mode
+				{
+					CANBUS();
+					BT();
+				}
 				else 
 				{
 					Serial.print(F("Chademo Mode: "));
@@ -402,17 +406,25 @@ void loop()
 			
 			if (chademoState == RUNNING)
 			{
-				if ((evse_status.status & EVSE_STATUS_STOPPED) != 0)
+				if (bListenEVSEStatus)
 				{
-					Serial.println(F("EVSE requests we stop charging."));
-					chademoState = CEASE_CURRENT;
-				}
+					if ((evse_status.status & EVSE_STATUS_STOPPED) != 0)
+					{
+						Serial.println(F("EVSE requests we stop charging."));
+						chademoState = CEASE_CURRENT;
+					}
 
-				//if there is no remaining time then gracefully shut down
-				if (evse_status.remainingChargeSeconds == 0)
+					//if there is no remaining time then gracefully shut down
+					if (evse_status.remainingChargeSeconds == 0)
+					{
+						Serial.println(F("EVSE reports time elapsed. Finishing."));
+						chademoState = CEASE_CURRENT;
+					}
+				}
+				else
 				{
-					Serial.println(F("EVSE reports time elapsed. Finishing."));
-					chademoState = CEASE_CURRENT;
+					//if charger is not reporting being stopped and is reporting remaining time then enable the checks.
+					if ((evse_status.status & EVSE_STATUS_STOPPED) == 0 && evse_status.remainingChargeSeconds > 0) bListenEVSEStatus = 1;
 				}
 			}
 		}
