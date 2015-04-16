@@ -270,6 +270,7 @@ void loop()
 	uint8_t pos;
 	CurrentMillis = millis();
 	uint8_t len;
+	uint8_t tempCurrVal;
 
 #ifdef DEBUG_TIMING
 	if (debugTick == 1)
@@ -303,14 +304,16 @@ void loop()
 
 		if (chademoState == RUNNING && bDoMismatchChecks)
 		{
-			if (abs(Voltage - evse_status.presentVoltage) > 7 && !carStatus.voltDeviation)
+			if (abs(Voltage - evse_status.presentVoltage) > (evse_status.presentVoltage >> 3) && !carStatus.voltDeviation)
 			{
 				Serial.println(F("Voltage mismatch! Aborting!"));
 				carStatus.voltDeviation = 1;
 				chademoState = CEASE_CURRENT;
 			}
 
-			if (abs(Current - evse_status.presentCurrent) > 7 && !carStatus.currDeviation)
+			tempCurrVal = evse_status.presentCurrent >> 3;
+			if (tempCurrVal < 3) tempCurrVal = 3;
+			if (abs(Current - evse_status.presentCurrent) > tempCurrVal && !carStatus.currDeviation)
 			{
 				Serial.println(F("Current mismatch! Aborting!"));
 				carStatus.currDeviation = 1;
@@ -530,7 +533,8 @@ void loop()
 
 		switch (chademoState)
 		{
-		case STARTUP: //really useful state huh?
+		case STARTUP: 
+			bDoMismatchChecks = 0; //reset it for now
 			chademoDelayedState(SEND_INITIAL_PARAMS, 100);
 			break;
 		case SEND_INITIAL_PARAMS:
@@ -564,7 +568,7 @@ void loop()
 			carStatus.contactorOpen = 0; //its closed now
 			carStatus.chargingEnabled = 1; //please sir, I'd like some charge
 			bStartedCharge = 1;
-			mismatchStart = millis() + 10000; //start mismatch checks 10 seconds after we start the charge
+			mismatchStart = millis() + 10000; //start mismatch checks 10 seconds after we start the charge			
 			break;
 		case RUNNING:
 			//do processing here by taking our measured voltage, amperage, and SOC to see if we should be commanding something
@@ -601,6 +605,7 @@ void loop()
 			digitalWrite(OUT1, LOW);
                         Serial.println(F("CAR:Charge Enable OFF"));
 			bChademoSendRequests = 0; //don't need to keep sending anymore.
+			bListenEVSEStatus = 0; //don't want to pay attention to EVSE status when we're stopped
 			break;
 		}
 	}
