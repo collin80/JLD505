@@ -314,7 +314,7 @@ void loop()
 
 			tempCurrVal = evse_status.presentCurrent >> 3;
 			if (tempCurrVal < 3) tempCurrVal = 3;
-			if (abs(Current - evse_status.presentCurrent) > tempCurrVal && !carStatus.currDeviation)
+			if (abs((Current * -1.0) - evse_status.presentCurrent) > tempCurrVal && !carStatus.currDeviation)
 			{
 				Serial.println(F("Current mismatch! Aborting!"));
 				carStatus.currDeviation = 1;
