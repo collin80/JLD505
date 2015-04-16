@@ -60,16 +60,16 @@ unsigned char Flag_Recv = 0;
 volatile uint8_t debugTick = 0;
 typedef struct
 {
-	uint8_t valid; //a token to store EEPROM version and validity. If it matches expected value then EEPROM is not reset to defaults
-	float ampHours;
-	float kiloWattHours;
-	float packSizeKWH;
-	float voltageCalibration;
-	float currentCalibration;
-	uint16_t maxChargeVoltage;
-	uint16_t targetChargeVoltage;
-	uint8_t maxChargeAmperage;
-	uint8_t minChargeAmperage;
+	uint8_t valid; //a token to store EEPROM version and validity. If it matches expected value then EEPROM is not reset to defaults //0
+	float ampHours; //floats are 4 bytes //1
+	float kiloWattHours; //5
+	float packSizeKWH; //9
+	float voltageCalibration; //13
+	float currentCalibration; //17
+	uint16_t maxChargeVoltage; //21
+	uint16_t targetChargeVoltage; //23
+	uint8_t maxChargeAmperage; //25
+	uint8_t minChargeAmperage; //26
 } EESettings;
 EESettings settings;
 #define EEPROM_VALID	0xDE
@@ -235,7 +235,7 @@ void setup()
 	ina.begin(69);
 	ina.configure(INA226_AVERAGES_16, INA226_BUS_CONV_TIME_1100US, INA226_SHUNT_CONV_TIME_1100US, INA226_MODE_SHUNT_BUS_CONT);
 
-	EEPROM_readAnything(0, settings);
+	EEPROM_readAnything(256, settings);
 	if (settings.valid != EEPROM_VALID) //not proper version so reset to defaults
 	{
 		settings.valid = EEPROM_VALID;
@@ -248,7 +248,7 @@ void setup()
 		settings.maxChargeVoltage = MAX_CHARGE_V;
 		settings.targetChargeVoltage = TARGET_CHARGE_V;
 		settings.minChargeAmperage = MIN_CHARGE_A;
-		EEPROM_writeAnything(0, settings);
+		EEPROM_writeAnything(256, settings);
 	}
 
 	attachInterrupt(0, Save, FALLING);
@@ -260,7 +260,8 @@ void setup()
 	Serial.print(tempSensorCount);
 	Serial.println(F(" temperature sensors."));
 
-	carStatus.targetCurrent = settings.maxChargeAmperage;
+	//carStatus.targetCurrent = settings.maxChargeAmperage;
+	carStatus.targetCurrent = 90; //hard coded target amperage
 	carStatus.targetVoltage = settings.targetChargeVoltage;
 	carStatus.contactorOpen = 1;
 }
@@ -343,9 +344,6 @@ void loop()
                           }
  		}
 
-               
-		//if (!bChademoMode) 
-		//{
 			if (Count >= 50)
 			{
 				Count = 0;
@@ -362,7 +360,6 @@ void loop()
 				}
 				Save();
 			}
-		//}		
 	}
 
 	if (Flag_Recv || CAN.checkReceive() == CAN_MSGAVAIL) {
@@ -535,7 +532,7 @@ void loop()
 		{
 		case STARTUP: 
 			bDoMismatchChecks = 0; //reset it for now
-			chademoDelayedState(SEND_INITIAL_PARAMS, 100);
+			chademoDelayedState(SEND_INITIAL_PARAMS, 50);
 			break;
 		case SEND_INITIAL_PARAMS:
 			//we could do calculations to see how long the charge should take based on SOC and 
@@ -543,7 +540,7 @@ void loop()
 			//One problem with that is that we don't yet know the EVSE parameters so we can't know
 			//the max allowable amperage just yet.
 			bChademoSendRequests = 1; //causes chademo frames to be sent out every 100ms
-			chademoDelayedState(WAIT_FOR_EVSE_PARAMS, 100);
+			chademoDelayedState(WAIT_FOR_EVSE_PARAMS, 50);
 			Serial.println(F("Sent params to EVSE. Waiting."));
 			break;
 		case WAIT_FOR_EVSE_PARAMS:
@@ -552,8 +549,8 @@ void loop()
 		case SET_CHARGE_BEGIN:
 			Serial.println(F("CAR:Charge enable ON"));
 			digitalWrite(OUT1, HIGH); //signal that we're ready to charge
-			//carStatus.chargingEnabled = 1; //should this be enabled here???
-			chademoDelayedState(WAIT_FOR_BEGIN_CONFIRMATION, 150);
+			carStatus.chargingEnabled = 1; //should this be enabled here???
+			chademoDelayedState(WAIT_FOR_BEGIN_CONFIRMATION, 50);
 			break;
 		case WAIT_FOR_BEGIN_CONFIRMATION:
 			if (digitalRead(IN0)) //inverse logic from how IN1 works. Be careful!
@@ -564,7 +561,7 @@ void loop()
 		case CLOSE_CONTACTORS:
 			Serial.println(F("CAR:Contactor close."));
 			digitalWrite(OUT0, HIGH);
-			chademoDelayedState(RUNNING, 150);
+			chademoDelayedState(RUNNING, 50);
 			carStatus.contactorOpen = 0; //its closed now
 			carStatus.chargingEnabled = 1; //please sir, I'd like some charge
 			bStartedCharge = 1;
@@ -600,12 +597,15 @@ void loop()
 			//digitalWrite(OUT1, LOW);
 			break;
 		case STOPPED:
+			if (bChademoSendRequests == 1)
+			{
 			digitalWrite(OUT0, LOW);
                         Serial.println(F("CAR:Contactor OPEN"));
 			digitalWrite(OUT1, LOW);
                         Serial.println(F("CAR:Charge Enable OFF"));
 			bChademoSendRequests = 0; //don't need to keep sending anymore.
 			bListenEVSEStatus = 0; //don't want to pay attention to EVSE status when we're stopped
+			}
 			break;
 		}
 	}
@@ -613,7 +613,7 @@ void loop()
 
 void Save()
 {
-	EEPROM_writeAnything(0, settings);
+	EEPROM_writeAnything(256, settings);
 }  
 
 void USB()
