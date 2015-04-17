@@ -359,10 +359,11 @@ void loop()
 			if (Count >= 50)
 			{
 				Count = 0;
-				USB();												
+				USB();	
+				CANBUS();							
 				if (!bChademoMode) //save some processor time by not doing these in chademo mode
 				{
-					CANBUS();
+					
 					BT();
 				}
 				else 
