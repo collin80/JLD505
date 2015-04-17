@@ -31,6 +31,9 @@ DallasTemperature sensors(&ds);
 #define MAX_CHARGE_A	120
 #define TARGET_CHARGE_V	170
 #define MIN_CHARGE_A	10
+#define INITIAL_SOC 100
+#define CAPACITY 180
+
 
 //set the proper digital pins for these
 #define IN0		4
@@ -70,6 +73,8 @@ typedef struct
 	uint16_t targetChargeVoltage; //23
 	uint8_t maxChargeAmperage; //25
 	uint8_t minChargeAmperage; //26
+        uint8_t capacity;
+        uint8_t SOC;
 } EESettings;
 EESettings settings;
 #define EEPROM_VALID	0xDE
@@ -248,7 +253,10 @@ void setup()
 		settings.maxChargeVoltage = MAX_CHARGE_V;
 		settings.targetChargeVoltage = TARGET_CHARGE_V;
 		settings.minChargeAmperage = MIN_CHARGE_A;
-		EEPROM_writeAnything(256, settings);
+                settings.SOC=INITIAL_SOC;
+                settings.capacity=CAPACITY;
+                
+     		EEPROM_writeAnything(256, settings);
 	}
 
 	attachInterrupt(0, Save, FALLING);
@@ -302,6 +310,7 @@ void loop()
 		settings.ampHours += Current * (float)Time / 1000.0 / 3600.0;
 		Power = Voltage * Current / 1000.0;
 		settings.kiloWattHours += Power * (float)Time / 1000.0 / 3600.0;
+                settings.SOC=((settings.capacity-settings.ampHours)/settings.capacity)*100;
 
 		if (chademoState == RUNNING && bDoMismatchChecks)
 		{
@@ -334,6 +343,9 @@ void loop()
                           {
                             if (Voltage > settings.targetChargeVoltage-1) //All initializations complete and we're running.We've reached charging target
                               {
+                                settings.SOC=100;
+                                settings.ampHours=0;
+                                settings.kiloWattHours=0;
                                 if (settings.minChargeAmperage = 0 || carStatus.targetCurrent < settings.minChargeAmperage) chademoState = CEASE_CURRENT;  //Terminate charging
                                    else carStatus.targetCurrent--;  //Taper. Actual decrease occurs in sendChademoStatus                                   
                               }
@@ -699,9 +711,9 @@ void CANBUS()
 	canMsg[3] = lowByte((int)(Current * 10)); // Current Low Byte
 	canMsg[4] = highByte((int)(settings.ampHours * 10)); // AmpHours High Byte
 	canMsg[5] = lowByte((int)(settings.ampHours * 10)); // AmpHours Low Byte
-	canMsg[6] = 0x00; // Not Used
-	canMsg[7] = 0x00; // Not Used
-	CAN.sendMsgBuf(canMsgID, 0, 6, canMsg);
+	canMsg[6] = settings.capacity; // Not Used
+	canMsg[7] = settings.SOC; // Not Used
+	CAN.sendMsgBuf(canMsgID, 0, 8, canMsg);
 	
   
 	canMsgID = 0x505;
