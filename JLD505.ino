@@ -346,7 +346,7 @@ void loop()
                                 settings.SOC=100;
                                 settings.ampHours=0;
                                 settings.kiloWattHours=0;
-                                if (settings.minChargeAmperage = 0 || carStatus.targetCurrent < settings.minChargeAmperage) chademoState = CEASE_CURRENT;  //Terminate charging
+                                if (settings.minChargeAmperage == 0 || carStatus.targetCurrent < settings.minChargeAmperage) chademoState = CEASE_CURRENT;  //Terminate charging
                                    else carStatus.targetCurrent--;  //Taper. Actual decrease occurs in sendChademoStatus                                   
                               }
                               else //Only adjust upward if we have previous adjusted downward and do not exceed max amps
