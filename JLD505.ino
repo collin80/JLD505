@@ -334,7 +334,7 @@ void loop()
                           {
                             if (Voltage > settings.targetChargeVoltage-1) //All initializations complete and we're running.We've reached charging target
                               {
-                                if (settings.minChargeAmperage = 0 || carStatus.targetCurrent < settings.minChargeAmperage) chademoState = CEASE_CURRENT;  //Terminate charging
+                                if (settings.minChargeAmperage == 0 || carStatus.targetCurrent < settings.minChargeAmperage) chademoState = CEASE_CURRENT;  //Terminate charging
                                    else carStatus.targetCurrent--;  //Taper. Actual decrease occurs in sendChademoStatus                                   
                               }
                               else //Only adjust upward if we have previous adjusted downward and do not exceed max amps
@@ -786,6 +786,8 @@ void sendChademoStatus()
              Serial.print(carStatus.targetVoltage);
              Serial.print(F(" Current Command: "));
              Serial.print(askingAmps);
+			 Serial.print(F(" Target Amps: "));
+			 Serial.print(carStatus.targetCurrent);
              Serial.print(F(" Faults: "));
              Serial.print(faults,BIN);
              Serial.print(F(" Status: "));
