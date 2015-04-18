@@ -73,8 +73,8 @@ typedef struct
 	uint16_t targetChargeVoltage; //23
 	uint8_t maxChargeAmperage; //25
 	uint8_t minChargeAmperage; //26
-    uint8_t capacity; //27
-    uint8_t SOC; //28
+        uint8_t capacity;
+        uint8_t SOC;
 } EESettings;
 EESettings settings;
 #define EEPROM_VALID	0xDE
@@ -253,10 +253,10 @@ void setup()
 		settings.maxChargeVoltage = MAX_CHARGE_V;
 		settings.targetChargeVoltage = TARGET_CHARGE_V;
 		settings.minChargeAmperage = MIN_CHARGE_A;
-        settings.SOC=INITIAL_SOC;
-        settings.capacity=CAPACITY;
+                settings.SOC=INITIAL_SOC;
+                settings.capacity=CAPACITY;
                 
-		EEPROM_writeAnything(256, settings);
+     		EEPROM_writeAnything(256, settings);
 	}
 
 	attachInterrupt(0, Save, FALLING);
@@ -311,7 +311,7 @@ void loop()
 		settings.ampHours += Current * (float)Time / 1000.0 / 3600.0;
 		Power = Voltage * Current / 1000.0;
 		settings.kiloWattHours += Power * (float)Time / 1000.0 / 3600.0;
-        settings.SOC=((settings.capacity-settings.ampHours)/settings.capacity)*100;
+                settings.SOC=((settings.capacity-settings.ampHours)/settings.capacity)*100;
 
 		if (chademoState == RUNNING && bDoMismatchChecks)
 		{
@@ -341,26 +341,26 @@ void loop()
                         //If not zero, we will adjust current up or down as needed to maintain voltage until current decreases to the minimum entered
                 
                         if(Count==20)  //To allow batteries time to react, we only do this once in 50 counts
-                        {
-							if (Voltage > settings.targetChargeVoltage-1) //All initializations complete and we're running.We've reached charging target
-                            {
-								settings.SOC=100;
+                          {
+                            if (Voltage > settings.targetChargeVoltage-1) //All initializations complete and we're running.We've reached charging target
+                              {
+                                settings.SOC=100;
                                 settings.ampHours=0;
                                 settings.kiloWattHours=0;
                                 if (settings.minChargeAmperage == 0 || carStatus.targetCurrent < settings.minChargeAmperage) chademoState = CEASE_CURRENT;  //Terminate charging
-                                else carStatus.targetCurrent--;  //Taper. Actual decrease occurs in sendChademoStatus                                   
-							}
-                            else //Only adjust upward if we have previous adjusted downward and do not exceed max amps
-                            {
-								if (carStatus.targetCurrent < settings.maxChargeAmperage) carStatus.targetCurrent++;  
-                            }
-                        }
+                                   else carStatus.targetCurrent--;  //Taper. Actual decrease occurs in sendChademoStatus                                   
+                              }
+                              else //Only adjust upward if we have previous adjusted downward and do not exceed max amps
+                                {
+                                 if (carStatus.targetCurrent < settings.maxChargeAmperage)carStatus.targetCurrent++;  
+                                }
+                          }
  		}
 
 			if (Count >= 50)
 			{
 				Count = 0;
-				USB();												
+				USB();	
 				CANBUS();							
 				if (!bChademoMode) //save some processor time by not doing these in chademo mode
 				{
@@ -404,14 +404,6 @@ void loop()
 
 			//if we want more current then it can provide then revise our request to match max output
 			if (evse_params.availCurrent < carStatus.targetCurrent) carStatus.targetCurrent = evse_params.availCurrent;
-
-			//If not in running then also change our target current up to the minimum between the 
-			//available current reported and the max charge amperage. This should fix an issue where
-			//the target current got wacked for some reason and left at zero.
-			if (chademoState != RUNNING && evse_params.availCurrent > carStatus.targetCurrent)
-			{
-				carStatus.targetCurrent = min(evse_params.availCurrent, settings.maxChargeAmperage);
-			}
 		}
 		if (canMsgID == EVSE_STATUS)
 		{
@@ -715,10 +707,11 @@ void BT()
 void CANBUS()
 {
 	canMsgID = 0x404;
+        uint16_t currINT = abs(Current*10);
 	canMsg[0] = highByte((int)(Voltage * 10)); // Voltage High Byte
 	canMsg[1] = lowByte((int)(Voltage * 10)); // Voltage Low Byte
-	canMsg[2] = highByte((int)(Current * 10)); // Current High Byte
-	canMsg[3] = lowByte((int)(Current * 10)); // Current Low Byte
+	canMsg[2] = highByte(currINT); // Current High Byte
+	canMsg[3] = lowByte(currINT); // Current Low Byte
 	canMsg[4] = highByte((int)(settings.ampHours * 10)); // AmpHours High Byte
 	canMsg[5] = lowByte((int)(settings.ampHours * 10)); // AmpHours Low Byte
 	canMsg[6] = settings.capacity; // Not Used
@@ -727,10 +720,12 @@ void CANBUS()
 	
   
 	canMsgID = 0x505;
-	canMsg[0] = highByte((int)(Power * 10)); // Power High Byte
-	canMsg[1] = lowByte((int)(Power * 10)); // Power Low Byte
-	canMsg[2] = highByte((int)(settings.kiloWattHours * 10)); // KiloWattHours High Byte
-	canMsg[3] = lowByte((int)(settings.kiloWattHours * 10)); // KiloWattHours Low Byte
+        uint16_t Pwr=abs(Power*10);
+        uint16_t KWH=abs(settings.kiloWattHours *10);
+	canMsg[0] = highByte(Pwr); // Power High Byte
+	canMsg[1] = lowByte(Pwr); // Power Low Byte
+	canMsg[2] = highByte(KWH); // KiloWattHours High Byte
+	canMsg[3] = lowByte(KWH); // KiloWattHours Low Byte
 	canMsg[4] = 0x00; // Not Used
 	canMsg[5] = 0x00; // Not Used
 	canMsg[6] = 0x00; // Not Used
@@ -808,8 +803,6 @@ void sendChademoStatus()
              Serial.print(carStatus.targetVoltage);
              Serial.print(F(" Current Command: "));
              Serial.print(askingAmps);
-			 Serial.print(F(" Target Amps: "));
-			 Serial.print(carStatus.targetCurrent);
              Serial.print(F(" Faults: "));
              Serial.print(faults,BIN);
              Serial.print(F(" Status: "));
