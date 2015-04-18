@@ -84,6 +84,7 @@ uint8_t bStartedCharge = 0; //we have started a charge since the plug was insert
 uint8_t bChademoMode = 0; //accessed but not modified in ISR so it should be OK non-volatile
 uint8_t bChademoSendRequests = 0; //should we be sending periodic status updates?
 volatile uint8_t bChademoRequest = 0;  //is it time to send one of those updates?
+uint8_t bChademo10Protocol = 0; //can we use 1.0 protocol?
 //target values are what we send with periodic frames and can be changed.
 uint8_t askingAmps = 0; //how many amps to ask for. Trends toward targetAmperage
 uint8_t bListenEVSEStatus = 0; //should we pay attention to stop requests and such yet?
@@ -415,6 +416,7 @@ void loop()
 		}
 		if (canMsgID == EVSE_STATUS)
 		{
+			if (canMsg[0] > 1) bChademo10Protocol = 1;
 			evse_status.presentVoltage = canMsg[1] + 256 * canMsg[2];
 			evse_status.presentCurrent  = canMsg[3];
 			evse_status.status = canMsg[5];				
@@ -514,6 +516,7 @@ void loop()
 					carStatus.notParked = 0;
 					carStatus.stopRequest = 0;
 					carStatus.voltDeviation = 0;
+					bChademo10Protocol = 0;
 				}
 			}
 		}
@@ -789,11 +792,15 @@ void sendChademoStatus()
 	if (carStatus.chargingEnabled) status |= CARSIDE_STATUS_CHARGE;
 	if (carStatus.notParked) status |= CARSIDE_STATUS_NOTPARK;
 	if (carStatus.chargingFault) status |= CARSIDE_STATUS_MALFUN;
-	if (carStatus.contactorOpen) status |= CARSIDE_STATUS_CONTOP;
-	if (carStatus.stopRequest) status |= CARSIDE_STATUS_CHSTOP;
+	if (bChademo10Protocol)
+	{
+		if (carStatus.contactorOpen) status |= CARSIDE_STATUS_CONTOP;
+		if (carStatus.stopRequest) status |= CARSIDE_STATUS_CHSTOP;
+	}
 
 	canMsgID = CARSIDE_CONTROL;
-	canMsg[0] = 2; //tell EVSE we are talking 1.0 protocol
+	if (bChademo10Protocol)	canMsg[0] = 2; //tell EVSE we are talking 1.0 protocol
+	else canMsg[0] = 1; //talking 0.9 protocol
 	canMsg[1] = lowByte(carStatus.targetVoltage);
 	canMsg[2] = highByte(carStatus.targetVoltage);
 	canMsg[3] = askingAmps;
