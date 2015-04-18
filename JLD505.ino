@@ -272,6 +272,7 @@ void setup()
 	carStatus.targetCurrent = 90; //hard coded target amperage
 	carStatus.targetVoltage = settings.targetChargeVoltage;
 	carStatus.contactorOpen = 1;
+        carStatus.battOverTemp = 0;
 }
 
 void loop()
