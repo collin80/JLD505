@@ -58,25 +58,7 @@ int32_t canMsgID = 0;
 unsigned char canMsg[8];
 unsigned char Flag_Recv = 0;
 volatile uint8_t debugTick = 0;
-<<<<<<< HEAD
-typedef struct
-{
-	uint8_t valid; //a token to store EEPROM version and validity. If it matches expected value then EEPROM is not reset to defaults //0
-	float ampHours; //floats are 4 bytes //1
-	float kiloWattHours; //5
-	float packSizeKWH; //9
-	float voltageCalibration; //13
-	float currentCalibration; //17
-	uint16_t maxChargeVoltage; //21
-	uint16_t targetChargeVoltage; //23
-	uint8_t maxChargeAmperage; //25
-	uint8_t minChargeAmperage; //26
-        uint8_t capacity;
-        uint8_t SOC;
-} EESettings;
-=======
 
->>>>>>> origin/debug
 EESettings settings;
 #define EEPROM_VALID	0xDE
 
@@ -151,16 +133,10 @@ void setup()
 		settings.maxChargeVoltage = MAX_CHARGE_V;
 		settings.targetChargeVoltage = TARGET_CHARGE_V;
 		settings.minChargeAmperage = MIN_CHARGE_A;
-<<<<<<< HEAD
-                settings.SOC=INITIAL_SOC;
-                settings.capacity=CAPACITY;
-=======
         settings.SOC=INITIAL_SOC;
         settings.capacity=CAPACITY;
 		settings.debuggingLevel = 2;
->>>>>>> origin/debug
-                
-     		EEPROM_writeAnything(256, settings);
+        EEPROM_writeAnything(256, settings);
 	}
 
 	settings.debuggingLevel = 2; //locked in to max debugging for now.
@@ -221,49 +197,10 @@ void loop()
 			{					
 				BT();
 			}
-<<<<<<< HEAD
-                         //Constant Current/Constant Voltage Taper checks.  If minimum current is set to zero, we terminate once target voltage is reached.
-                        //If not zero, we will adjust current up or down as needed to maintain voltage until current decreases to the minimum entered
-                
-                        if(Count==20)  //To allow batteries time to react, we only do this once in 50 counts
-                          {
-                            if (Voltage > settings.targetChargeVoltage-1) //All initializations complete and we're running.We've reached charging target
-                              {
-                                settings.SOC=100;
-                                settings.ampHours=0;
-                                settings.kiloWattHours=0;
-                                if (settings.minChargeAmperage == 0 || carStatus.targetCurrent < settings.minChargeAmperage) chademoState = CEASE_CURRENT;  //Terminate charging
-                                   else carStatus.targetCurrent--;  //Taper. Actual decrease occurs in sendChademoStatus                                   
-                              }
-                              else //Only adjust upward if we have previous adjusted downward and do not exceed max amps
-                                {
-                                 if (carStatus.targetCurrent < settings.maxChargeAmperage)carStatus.targetCurrent++;  
-                                }
-                          }
- 		}
-
-			if (Count >= 50)
-			{
-				Count = 0;
-				USB();	
-				CANBUS();							
-				if (!bChademoMode) //save some processor time by not doing these in chademo mode
-				{
-					
-					BT();
-				}
-				else 
-				{
-					Serial.print(F("Chademo Mode: "));
-					Serial.println(chademoState);
-				}
-				Save();
-=======
 			else if (settings.debuggingLevel > 0) 
 			{		
 				Serial.print(F("Chademo Mode: "));
 				Serial.println(chademo.getState());
->>>>>>> origin/debug
 			}
 			Save();
 		}
@@ -273,91 +210,7 @@ void loop()
 		Flag_Recv = 0;		
 		CAN.readMsgBuf(&len, canMsg);            // read data,  len: data length, buf: data buf
 		canMsgID = CAN.getCanId();
-<<<<<<< HEAD
-		if (canMsgID == EVSE_PARAMS)
-		{
-			if (chademoState == WAIT_FOR_EVSE_PARAMS) chademoDelayedState(SET_CHARGE_BEGIN, 100);
-			evse_params.supportWeldCheck = canMsg[0];
-			evse_params.availVoltage = canMsg[1] + canMsg[2] * 256;
-			evse_params.availCurrent = canMsg[3];			
-			evse_params.thresholdVoltage = canMsg[4] + canMsg[5] * 256;
-                        Serial.print(F("EVSE: MaxVoltage: "));
-                        Serial.print(evse_params.availVoltage);
-                        Serial.print(F(" Max Current:"));
-                        Serial.print(evse_params.availCurrent);
-                        Serial.print(F(" Threshold Voltage:"));
-                        Serial.print(evse_params.thresholdVoltage);
-                        timestamp();
-			//if charger cannot provide our requested voltage then GTFO
-			if (evse_params.availVoltage < carStatus.targetVoltage)
-			{
-				Serial.print(F("EVSE can't provide needed voltage. Aborting."));
-				Serial.println(evse_params.availVoltage);
-				chademoState = CEASE_CURRENT;
-			}
-
-			//if we want more current then it can provide then revise our request to match max output
-			if (evse_params.availCurrent < carStatus.targetCurrent) carStatus.targetCurrent = evse_params.availCurrent;
-		}
-		if (canMsgID == EVSE_STATUS)
-		{
-			evse_status.presentVoltage = canMsg[1] + 256 * canMsg[2];
-			evse_status.presentCurrent  = canMsg[3];
-			evse_status.status = canMsg[5];				
-			if (canMsg[6] < 0xFF)
-			{
-				evse_status.remainingChargeSeconds = canMsg[6] * 10;
-			}
-			else 
-			{
-				evse_status.remainingChargeSeconds = canMsg[7] * 60;
-			}
-
-                        Serial.print(F("EVSE: Measured Voltage: "));
-                        Serial.print(evse_status.presentVoltage);
-                        Serial.print(F(" Current: "));
-                        Serial.print(evse_status.presentCurrent);
-                        Serial.print(F(" Time remaining: "));
-                        Serial.print(evse_status.remainingChargeSeconds);
-                        Serial.print(F(" Status: "));
-                        Serial.print(evse_status.status,BIN);
-                         timestamp();
-                   
-
-			//on fault try to turn off current immediately and cease operation
-			if ((evse_status.status & 0x1A) != 0) //if bits 1, 3, or 4 are set then we have a problem.
-			{
-				Serial.println(F("EVSE:fault! Abort."));
-				if (chademoState == RUNNING) chademoState = CEASE_CURRENT;
-			}
-			
-			if (chademoState == RUNNING)
-			{
-				if (bListenEVSEStatus)
-				{
-					if ((evse_status.status & EVSE_STATUS_STOPPED) != 0)
-					{
-					Serial.println(F("EVSE:stop charging."));
-						chademoState = CEASE_CURRENT;
-					}
-
-					//if there is no remaining time then gracefully shut down
-					if (evse_status.remainingChargeSeconds == 0)
-					{
-					Serial.println(F("EVSE:time elapsed..Ending"));
-						chademoState = CEASE_CURRENT;
-					}
-				}
-				else
-				{
-					//if charger is not reporting being stopped and is reporting remaining time then enable the checks.
-					if ((evse_status.status & EVSE_STATUS_STOPPED) == 0 && evse_status.remainingChargeSeconds > 0) bListenEVSEStatus = 1;
-				}
-			}
-		}
-=======
 		chademo.handleCANFrame(canMsgID, canMsg);
->>>>>>> origin/debug
 	}
   
 	if (bStartConversion == 1)
@@ -491,96 +344,6 @@ void CANBUS()
 	CAN.sendMsgBuf(canMsgID, 0, 4, canMsg);
  }
 
-<<<<<<< HEAD
-void sendChademoBattSpecs()
-{
-	
-	canMsgID = CARSIDE_BATT;
-	canMsg[0] = 0x00; // Not Used
-	canMsg[1] = 0x00; // Not Used
-	canMsg[2] = 0x00; // Not Used
-	canMsg[3] = 0x00; // Not Used
-	canMsg[4] = lowByte(settings.maxChargeVoltage);
-	canMsg[5] = highByte(settings.maxChargeVoltage); 
-	canMsg[6] = (uint8_t)settings.packSizeKWH;
-	canMsg[7] = 0; //not used
-	CAN.sendMsgBuf(canMsgID, 0, 8, canMsg);
-
-             Serial.print(F("CAR: Absolute MAX Voltage:"));
-             Serial.print(settings.maxChargeVoltage);
-             Serial.print(F(" Pack size: "));
-             Serial.print(settings.packSizeKWH);
-             timestamp();
-                 
-}
-
-void sendChademoChargingTime()
-{
-	
-	canMsgID = CARSIDE_CHARGETIME;
-	canMsg[0] = 0x00; // Not Used
-	canMsg[1] = 0xFF; //not using 10 second increment mode
-	canMsg[2] = 90; //ask for how long of a charge? It will be forceably stopped if we hit this time
-	canMsg[3] = 60; //how long we think the charge will actually take
-	canMsg[4] = 0; //not used
-	canMsg[5] = 0; //not used
-	canMsg[6] = 0; //not used
-	canMsg[7] = 0; //not used
-	CAN.sendMsgBuf(canMsgID, 0, 8, canMsg);
-}
-
-void sendChademoStatus()
-{
-	uint8_t faults = 0;
-	uint8_t status = 0;
-
-	if (carStatus.battOverTemp) faults |= CARSIDE_FAULT_OVERT;
-	if (carStatus.battOverVolt) faults |= CARSIDE_FAULT_OVERV;
-	if (carStatus.battUnderVolt) faults |= CARSIDE_FAULT_UNDERV;
-	if (carStatus.currDeviation) faults |= CARSIDE_FAULT_CURR;
-	if (carStatus.voltDeviation) faults |= CARSIDE_FAULT_VOLTM;
-
-	if (carStatus.chargingEnabled) status |= CARSIDE_STATUS_CHARGE;
-	if (carStatus.notParked) status |= CARSIDE_STATUS_NOTPARK;
-	if (carStatus.chargingFault) status |= CARSIDE_STATUS_MALFUN;
-	if (carStatus.contactorOpen) status |= CARSIDE_STATUS_CONTOP;
-	if (carStatus.stopRequest) status |= CARSIDE_STATUS_CHSTOP;
-
-	canMsgID = CARSIDE_CONTROL;
-	canMsg[0] = 2; //tell EVSE we are talking 1.0 protocol
-	canMsg[1] = lowByte(carStatus.targetVoltage);
-	canMsg[2] = highByte(carStatus.targetVoltage);
-	canMsg[3] = askingAmps;
-	canMsg[4] = faults;
-	canMsg[5] = status;
-	canMsg[6] = (uint8_t)settings.kiloWattHours;
-	canMsg[7] = 0; //not used
-	CAN.sendMsgBuf(canMsgID, 0, 8, canMsg);
-             Serial.print(F("CAR: Protocol:"));
-             Serial.print(canMsg[0]);
-             Serial.print(F(" Target Voltage: "));
-             Serial.print(carStatus.targetVoltage);
-             Serial.print(F(" Current Command: "));
-             Serial.print(askingAmps);
-             Serial.print(F(" Faults: "));
-             Serial.print(faults,BIN);
-             Serial.print(F(" Status: "));
-             Serial.print(status,BIN);
-             Serial.print(F(" kWh: "));
-             Serial.print(settings.kiloWattHours);
-             timestamp();
-                 
-	if (chademoState == RUNNING &&  askingAmps < carStatus.targetCurrent) askingAmps++;
-	//not a typo. We're allowed to change requested amps by +/- 20A per second. We send the above frame every 100ms so a single
-	//increment means we can ramp up 10A per second. But, we want to ramp down quickly if there is a problem so do two which
-	//gives us -20A per second.
-	if (chademoState != RUNNING && askingAmps > 0) askingAmps--;
-	if (askingAmps > carStatus.targetCurrent) askingAmps--;
-	if (askingAmps > carStatus.targetCurrent) askingAmps--;
-}
-
-=======
->>>>>>> origin/debug
 void timestamp()
 {
 	int milliseconds = (int) (millis()/1) %1000 ;
