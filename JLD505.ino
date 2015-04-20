@@ -9,6 +9,8 @@
 #include <DS2480B.h>
 #include <DallasTemperature.h>
 #include <FrequencyTimer2.h>
+#include "globals.h"
+#include "chademo.h"
 /*
 Notes on what needs to be done:
 - Timing analysis showed that the USB, CANBUS, and BT routines take up entirely too much time. They can delay processing by
@@ -35,11 +37,6 @@ DallasTemperature sensors(&ds);
 #define CAPACITY 180
 
 
-//set the proper digital pins for these
-#define IN0		4
-#define IN1		7
-#define OUT0	5
-#define OUT1	6
 
 INA226 ina;
 const unsigned long Interval = 10;
@@ -61,6 +58,7 @@ int32_t canMsgID = 0;
 unsigned char canMsg[8];
 unsigned char Flag_Recv = 0;
 volatile uint8_t debugTick = 0;
+<<<<<<< HEAD
 typedef struct
 {
 	uint8_t valid; //a token to store EEPROM version and validity. If it matches expected value then EEPROM is not reset to defaults //0
@@ -76,103 +74,11 @@ typedef struct
         uint8_t capacity;
         uint8_t SOC;
 } EESettings;
+=======
+
+>>>>>>> origin/debug
 EESettings settings;
 #define EEPROM_VALID	0xDE
-
-//Bunch o' chademo related stuff. 
-uint8_t bStartedCharge = 0; //we have started a charge since the plug was inserted. Prevents attempts to restart charging if it stopped previously
-uint8_t bChademoMode = 0; //accessed but not modified in ISR so it should be OK non-volatile
-uint8_t bChademoSendRequests = 0; //should we be sending periodic status updates?
-volatile uint8_t bChademoRequest = 0;  //is it time to send one of those updates?
-//target values are what we send with periodic frames and can be changed.
-uint8_t askingAmps = 0; //how many amps to ask for. Trends toward targetAmperage
-uint8_t bListenEVSEStatus = 0; //should we pay attention to stop requests and such yet?
-uint8_t bDoMismatchChecks = 0; //should we be checking for voltage and current mismatches?
-uint32_t mismatchStart;
-uint32_t stateMilli;
-uint32_t insertionTime = 0;
-enum CHADEMOSTATE 
-{
-	STARTUP,
-	SEND_INITIAL_PARAMS,
-	WAIT_FOR_EVSE_PARAMS,
-	SET_CHARGE_BEGIN,
-	WAIT_FOR_BEGIN_CONFIRMATION,
-	CLOSE_CONTACTORS,
-	RUNNING,
-	CEASE_CURRENT,
-	WAIT_FOR_ZERO_CURRENT,
-	OPEN_CONTACTOR,
-	FAULTED,
-	STOPPED,
-	LIMBO
-};
-CHADEMOSTATE chademoState = STOPPED;
-CHADEMOSTATE stateHolder = STOPPED;
-
-typedef struct 
-{
-	uint8_t supportWeldCheck;
-	uint16_t availVoltage;
-	uint8_t availCurrent;
-	uint16_t thresholdVoltage; //evse calculates this. It is the voltage at which it'll abort charging to save the battery pack in case we asked for something stupid
-} EVSE_PARAMS;
-EVSE_PARAMS evse_params;
-
-typedef struct 
-{
-	uint16_t presentVoltage;
-	uint8_t presentCurrent;
-	uint8_t status;
-	uint16_t remainingChargeSeconds;
-} EVSE_STATUS;
-EVSE_STATUS evse_status;
-
-typedef struct 
-{
-	uint16_t targetVoltage; //what voltage we want the EVSE to put out
-	uint8_t targetCurrent; //what current we'd like the EVSE to provide
-	uint8_t remainingKWH; //report # of KWh in the battery pack (charge level)
-	uint8_t battOverVolt : 1; //we signal that battery or a cell is too high of a voltage
-	uint8_t battUnderVolt : 1; //we signal that battery is too low
-	uint8_t currDeviation : 1; //we signal that measured current is not the same as EVSE is reporting
-	uint8_t battOverTemp : 1; //we signal that battery is too hot
-	uint8_t voltDeviation : 1; //we signal that we measure a different voltage than EVSE reports
-	uint8_t chargingEnabled : 1; //ask EVSE to enable charging
-	uint8_t notParked : 1; //advise EVSE that we're not in park.
-	uint8_t chargingFault : 1; //signal EVSE that we found a fault
-	uint8_t contactorOpen : 1; //tell EVSE whether we've closed the charging contactor 
-	uint8_t stopRequest : 1; //request that the charger cease operation before we really get going
-} CARSIDE_STATUS;
-CARSIDE_STATUS carStatus;
-
-//The IDs for chademo comm - both carside and EVSE side so we know what to listen for
-//as well.
-#define CARSIDE_BATT		0x100
-#define CARSIDE_CHARGETIME	0x101
-#define CARSIDE_CONTROL		0x102
-
-#define EVSE_PARAMS			0x108
-#define EVSE_STATUS			0x109
-
-#define CARSIDE_FAULT_OVERV		1 //over voltage
-#define CARSIDE_FAULT_UNDERV	2 //Under voltage
-#define CARSIDE_FAULT_CURR		4 //current mismatch
-#define CARSIDE_FAULT_OVERT		8 //over temperature
-#define CARSIDE_FAULT_VOLTM		16 //voltage mismatch
-
-#define CARSIDE_STATUS_CHARGE	1 //charging enabled
-#define CARSIDE_STATUS_NOTPARK	2 //shifter not in safe state
-#define CARSIDE_STATUS_MALFUN	4 //vehicle did something dumb
-#define CARSIDE_STATUS_CONTOP	8 //main contactor open
-#define CARSIDE_STATUS_CHSTOP	16 //charger stop before even charging
-
-#define EVSE_STATUS_CHARGE		1 //charger is active
-#define EVSE_STATUS_ERR			2 //something went wrong
-#define EVSE_STATUS_CONNLOCK	4 //connector is currently locked
-#define EVSE_STATUS_INCOMPAT	8 //parameters between vehicle and charger not compatible
-#define EVSE_STATUS_BATTERR		16 //something wrong with battery?!
-#define EVSE_STATUS_STOPPED		32 //charger is stopped
 
 void MCP2515_ISR()
 {
@@ -185,7 +91,7 @@ void timer2Int()
 	if (timerFastCounter == 8)
 	{
 		debugTick = 1;
-		if (bChademoMode  && bChademoSendRequests) bChademoRequest = 1;
+		if (chademo.bChademoMode  && chademo.bChademoSendRequests) chademo.bChademoRequest = 1;
 		timerFastCounter = 0;
 		timerIntCounter++;
 		if (timerIntCounter < 10)
@@ -205,14 +111,6 @@ void timer2Int()
 	}
 }
   
-//will wait delayTime milliseconds and then transition to new state. Sets state to LIMBO in the meantime
-void chademoDelayedState(int newstate, uint16_t delayTime)
-{
-	chademoState = LIMBO;
-	stateHolder = (CHADEMOSTATE)newstate;
-	stateMilli = millis() + delayTime;
-}
-
 void setup()
 { 
 //first thing configure the I/O pins and set them to a sane state
@@ -253,26 +151,34 @@ void setup()
 		settings.maxChargeVoltage = MAX_CHARGE_V;
 		settings.targetChargeVoltage = TARGET_CHARGE_V;
 		settings.minChargeAmperage = MIN_CHARGE_A;
+<<<<<<< HEAD
                 settings.SOC=INITIAL_SOC;
                 settings.capacity=CAPACITY;
+=======
+        settings.SOC=INITIAL_SOC;
+        settings.capacity=CAPACITY;
+		settings.debuggingLevel = 2;
+>>>>>>> origin/debug
                 
      		EEPROM_writeAnything(256, settings);
 	}
+
+	settings.debuggingLevel = 2; //locked in to max debugging for now.
 
 	attachInterrupt(0, Save, FALLING);
 	FrequencyTimer2::setPeriod(25000); //interrupt every 25ms
 	FrequencyTimer2::setOnOverflow(timer2Int);
 	
-	Serial.print(F("Found "));
-	tempSensorCount = sensors.getDeviceCount(); 
-	Serial.print(tempSensorCount);
-	Serial.println(F(" temperature sensors."));
+	if (settings.debuggingLevel > 0)
+	{
+		Serial.print(F("Found "));
+		tempSensorCount = sensors.getDeviceCount(); 
+		Serial.print(tempSensorCount);
+		Serial.println(F(" temperature sensors."));
+	}
 
-	//carStatus.targetCurrent = settings.maxChargeAmperage;
-	carStatus.targetCurrent = 90; //hard coded target amperage
-	carStatus.targetVoltage = settings.targetChargeVoltage;
-	carStatus.contactorOpen = 1;
-        carStatus.battOverTemp = 0;
+	chademo.setTargetAmperage(settings.maxChargeAmperage);
+	chademo.setTargetVoltage(settings.targetChargeVoltage);
 }
 
 void loop()
@@ -280,7 +186,6 @@ void loop()
 	uint8_t pos;
 	CurrentMillis = millis();
 	uint8_t len;
-	uint8_t tempCurrVal;
 
 #ifdef DEBUG_TIMING
 	if (debugTick == 1)
@@ -289,21 +194,13 @@ void loop()
 		Serial.println(millis());
 	}
 #endif 
+
+	chademo.loop();
  
 	if(CurrentMillis - PreviousMillis >= Interval)
 	{
 		Time = CurrentMillis - PreviousMillis;
 		PreviousMillis = CurrentMillis;   
-
-		if (!bDoMismatchChecks && chademoState == RUNNING)
-		{
-			if (CurrentMillis > mismatchStart) bDoMismatchChecks = 1;
-		}
-
-		if (chademoState == LIMBO && CurrentMillis > stateMilli)
-		{
-			chademoState = stateHolder;
-		}
     
 		Count++;
 		Voltage = ina.readBusVoltage() * settings.voltageCalibration;
@@ -313,30 +210,18 @@ void loop()
 		settings.kiloWattHours += Power * (float)Time / 1000.0 / 3600.0;
                 settings.SOC=((settings.capacity-settings.ampHours)/settings.capacity)*100;
 
-		if (chademoState == RUNNING && bDoMismatchChecks)
+		chademo.doProcessing();
+
+		if (Count >= 50)
 		{
-			if (abs(Voltage - evse_status.presentVoltage) > (evse_status.presentVoltage >> 3) && !carStatus.voltDeviation)
-			{
-				Serial.println(F("Voltage mismatch! Aborting!"));
-				carStatus.voltDeviation = 1;
-				chademoState = CEASE_CURRENT;
+			Count = 0;
+			USB();												
+			CANBUS();							
+			if (!chademo.bChademoMode) //save some processor time by not doing these in chademo mode
+			{					
+				BT();
 			}
-
-			tempCurrVal = evse_status.presentCurrent >> 3;
-			if (tempCurrVal < 3) tempCurrVal = 3;
-			if (abs((Current * -1.0) - evse_status.presentCurrent) > tempCurrVal && !carStatus.currDeviation)
-			{
-				Serial.println(F("Current mismatch! Aborting!"));
-				carStatus.currDeviation = 1;
-				chademoState = CEASE_CURRENT;
-			}
-
-			if (Voltage > settings.maxChargeVoltage)
-			{
-				Serial.println(F("Over voltage fault!"));
-				carStatus.battOverVolt = 1;
-				chademoState = CEASE_CURRENT;
-			}
+<<<<<<< HEAD
                          //Constant Current/Constant Voltage Taper checks.  If minimum current is set to zero, we terminate once target voltage is reached.
                         //If not zero, we will adjust current up or down as needed to maintain voltage until current decreases to the minimum entered
                 
@@ -373,13 +258,22 @@ void loop()
 					Serial.println(chademoState);
 				}
 				Save();
+=======
+			else if (settings.debuggingLevel > 0) 
+			{		
+				Serial.print(F("Chademo Mode: "));
+				Serial.println(chademo.getState());
+>>>>>>> origin/debug
 			}
+			Save();
+		}
 	}
 
 	if (Flag_Recv || CAN.checkReceive() == CAN_MSGAVAIL) {
 		Flag_Recv = 0;		
 		CAN.readMsgBuf(&len, canMsg);            // read data,  len: data length, buf: data buf
 		canMsgID = CAN.getCanId();
+<<<<<<< HEAD
 		if (canMsgID == EVSE_PARAMS)
 		{
 			if (chademoState == WAIT_FOR_EVSE_PARAMS) chademoDelayedState(SET_CHARGE_BEGIN, 100);
@@ -461,6 +355,9 @@ void loop()
 				}
 			}
 		}
+=======
+		chademo.handleCANFrame(canMsgID, canMsg);
+>>>>>>> origin/debug
 	}
   
 	if (bStartConversion == 1)
@@ -474,153 +371,14 @@ void loop()
 		pos = sensorReadPosition;
 		if (pos < tempSensorCount)
 		{		  
-			Serial.print(pos);
-			Serial.print(": ");
-			//sensors.isConnected(pos);
-			// Serial.println(sensors.getCelsius(pos));
-			Serial.println(sensors.getTempCByIndex(pos));
-		}
-	}
-
-	if (!digitalRead(IN1)) //IN1 goes low if we have been plugged into the chademo port
-	{
-		if (insertionTime == 0)
-		{
-			insertionTime = millis();
-		}
-		else if (millis() > insertionTime + 500)
-		{
-			if (bChademoMode == 0)
+			if (settings.debuggingLevel > 0)
 			{
-				bChademoMode = 1;
-				if (chademoState == STOPPED && !bStartedCharge) {
-					chademoState = STARTUP;
-					Serial.println(F("Starting Chademo process."));
-					carStatus.battOverTemp = 0;
-					carStatus.battOverVolt = 0;
-					carStatus.battUnderVolt = 0;
-					carStatus.chargingFault = 0;
-					carStatus.chargingEnabled = 0;
-					carStatus.contactorOpen = 1;
-					carStatus.currDeviation = 0;
-					carStatus.notParked = 0;
-					carStatus.stopRequest = 0;
-					carStatus.voltDeviation = 0;
-				}
+				Serial.print(pos);
+				Serial.print(": ");
+				//sensors.isConnected(pos);
+				// Serial.println(sensors.getCelsius(pos));
+				Serial.println(sensors.getTempCByIndex(pos));
 			}
-		}
-	}
-	else
-	{
-		insertionTime = 0;
-		if (bChademoMode == 1)
-		{
-			Serial.println(F("Stopping chademo process."));
-			bChademoMode = 0;
-			bStartedCharge = 0;
-			chademoState = STOPPED;
-			//maybe it would be a good idea to try to see if EVSE is still transmitting to us and providing current
-			//as it is not a good idea to open the contactors under load. But, IN1 shouldn't trigger 
-			//until the EVSE is ready. Also, the EVSE should have us locked so the only way the plug should come out under
-			//load is if the idiot driver took off in the car. Bad move moron.
-			digitalWrite(OUT0, LOW);
-                Serial<<"CAR: Contactor open\n";
-			digitalWrite(OUT1, LOW);
-                Serial<<"CAR: Charge Enable OFF\n";
-		
-		}
-	}
-
-	if (bChademoMode)
-	{
-		if (bChademoSendRequests && bChademoRequest)
-		{
-			bChademoRequest = 0;
-			sendChademoStatus();
-			sendChademoBattSpecs();
-			sendChademoChargingTime();
-			//Serial.println("Tx");
-		}
-
-		switch (chademoState)
-		{
-		case STARTUP: 
-			bDoMismatchChecks = 0; //reset it for now
-			chademoDelayedState(SEND_INITIAL_PARAMS, 50);
-			break;
-		case SEND_INITIAL_PARAMS:
-			//we could do calculations to see how long the charge should take based on SOC and 
-			//also set a more realistic starting amperage. Options for the future.
-			//One problem with that is that we don't yet know the EVSE parameters so we can't know
-			//the max allowable amperage just yet.
-			bChademoSendRequests = 1; //causes chademo frames to be sent out every 100ms
-			chademoDelayedState(WAIT_FOR_EVSE_PARAMS, 50);
-			Serial.println(F("Sent params to EVSE. Waiting."));
-			break;
-		case WAIT_FOR_EVSE_PARAMS:
-			//for now do nothing while we wait. Might want to try to resend start up messages periodically if no reply
-			break;
-		case SET_CHARGE_BEGIN:
-			Serial.println(F("CAR:Charge enable ON"));
-			digitalWrite(OUT1, HIGH); //signal that we're ready to charge
-			carStatus.chargingEnabled = 1; //should this be enabled here???
-			chademoDelayedState(WAIT_FOR_BEGIN_CONFIRMATION, 50);
-			break;
-		case WAIT_FOR_BEGIN_CONFIRMATION:
-			if (digitalRead(IN0)) //inverse logic from how IN1 works. Be careful!
-			{
-				chademoDelayedState(CLOSE_CONTACTORS, 100);
-			}
-			break;
-		case CLOSE_CONTACTORS:
-			Serial.println(F("CAR:Contactor close."));
-			digitalWrite(OUT0, HIGH);
-			chademoDelayedState(RUNNING, 50);
-			carStatus.contactorOpen = 0; //its closed now
-			carStatus.chargingEnabled = 1; //please sir, I'd like some charge
-			bStartedCharge = 1;
-			mismatchStart = millis() + 10000; //start mismatch checks 10 seconds after we start the charge			
-			break;
-		case RUNNING:
-			//do processing here by taking our measured voltage, amperage, and SOC to see if we should be commanding something
-			//different to the EVSE. Also monitor temperatures to make sure we're not incinerating the pack.
-			break;
-		case CEASE_CURRENT:
-			Serial.println(F("CAR:Current req to 0"));
-			carStatus.targetCurrent = 0;
-			chademoState = WAIT_FOR_ZERO_CURRENT;
-			break;
-		case WAIT_FOR_ZERO_CURRENT:
-			if (evse_status.presentCurrent == 0)
-			{
-				chademoDelayedState(OPEN_CONTACTOR, 150);
-			}
-			break;
-		case OPEN_CONTACTOR:
-			Serial.println(F("CAR:Contactor OPEN"));
-			digitalWrite(OUT0, LOW);
-			carStatus.contactorOpen = 1;
-			carStatus.chargingEnabled = 0;
-			sendChademoStatus(); //we probably need to force this right now
-			chademoDelayedState(STOPPED, 100);
-			break;
-		case FAULTED:
-			Serial.println(F("CAR: fault!"));
-			chademoState = CEASE_CURRENT;
-			//digitalWrite(OUT0, LOW);
-			//digitalWrite(OUT1, LOW);
-			break;
-		case STOPPED:
-			if (bChademoSendRequests == 1)
-			{
-			digitalWrite(OUT0, LOW);
-                        Serial.println(F("CAR:Contactor OPEN"));
-			digitalWrite(OUT1, LOW);
-                        Serial.println(F("CAR:Charge Enable OFF"));
-			bChademoSendRequests = 0; //don't need to keep sending anymore.
-			bListenEVSEStatus = 0; //don't want to pay attention to EVSE status when we're stopped
-			}
-			break;
 		}
 	}
 }
@@ -733,6 +491,7 @@ void CANBUS()
 	CAN.sendMsgBuf(canMsgID, 0, 4, canMsg);
  }
 
+<<<<<<< HEAD
 void sendChademoBattSpecs()
 {
 	
@@ -820,21 +579,21 @@ void sendChademoStatus()
 	if (askingAmps > carStatus.targetCurrent) askingAmps--;
 }
 
+=======
+>>>>>>> origin/debug
 void timestamp()
 {
-   int milliseconds = (int) (millis()/1) %1000 ;
-        int seconds = (int) (millis() / 1000) % 60 ;
-        int minutes = (int) ((millis() / (1000*60)) % 60);
-        int hours   = (int) ((millis() / (1000*60*60)) % 24);
-        
-        
-         Serial.print(F(" Time:"));
-         Serial.print(hours);
-         Serial.print(F(":"));
-         Serial.print(minutes);
-         Serial.print(F(":"));
-         Serial.print(seconds);
-         Serial.print(F("."));
-         Serial.println(milliseconds);
-        
+	int milliseconds = (int) (millis()/1) %1000 ;
+	int seconds = (int) (millis() / 1000) % 60 ;
+	int minutes = (int) ((millis() / (1000*60)) % 60);
+	int hours   = (int) ((millis() / (1000*60*60)) % 24);
+            
+	Serial.print(F(" Time:"));
+	Serial.print(hours);
+	Serial.print(F(":"));
+	Serial.print(minutes);
+	Serial.print(F(":"));
+	Serial.print(seconds);
+	Serial.print(F("."));
+	Serial.println(milliseconds);    
 }
