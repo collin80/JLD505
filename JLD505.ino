@@ -15,6 +15,7 @@
 Notes on what needs to be done:
 - Timing analysis showed that the USB, CANBUS, and BT routines take up entirely too much time. They can delay processing by
    almost 100ms!
+- Investigate what changes are necessary to support the Cortex M0 processor in the Arduino Zero
 */
 
 //#define DEBUG_TIMING	//if this is defined you'll get time related debugging messages
