@@ -15,6 +15,8 @@
 Notes on what needs to be done:
 - Timing analysis showed that the USB, CANBUS, and BT routines take up entirely too much time. They can delay processing by
    almost 100ms!
+- Interrupt driven CAN has a tendency to lock up. It has been disabled for now
+- If the EVSE fails to transmit canbus frame this code is perfectly happy to act like nothing happened. That's got to be fixed.
 */
 
 //#define DEBUG_TIMING	//if this is defined you'll get time related debugging messages
@@ -64,7 +66,8 @@ EESettings settings;
 
 void MCP2515_ISR()
 {
-    CAN.handleInt();
+    //CAN.handleInt();
+	Flag_Recv = 1;
 }
 
 void timer2Int()
@@ -207,7 +210,10 @@ void loop()
 		}
 	}
 
-	if (CAN.GetRXFrame(inFrame)) {
+	//if (CAN.GetRXFrame(inFrame)) {
+	if (Flag_Recv == 1) {
+		Flag_Recv = 0;
+		CAN.receiveFrame(inFrame);
 		//Serial.print("IN CAN: ");
 		//Serial.println(inFrame.id, HEX);
 		chademo.handleCANFrame(inFrame);
@@ -330,7 +336,8 @@ void CANBUS()
 	outFrame.data.byte[5] = lowByte((int)(settings.ampHours * 10)); // AmpHours Low Byte
 	outFrame.data.byte[6] = settings.capacity; // Not Used
 	outFrame.data.byte[7] = settings.SOC; // Not Used
-	CAN.EnqueueTX(outFrame);
+	//CAN.EnqueueTX(outFrame);
+	CAN.sendFrame(outFrame);
   
 	outFrame.id = 0x505;
 	outFrame.length = 4;
@@ -344,7 +351,8 @@ void CANBUS()
 	outFrame.data.byte[5] = 0x00; // Not Used
 	outFrame.data.byte[6] = 0x00; // Not Used
 	outFrame.data.byte[7] = 0x00; // Not Used
-	CAN.EnqueueTX(outFrame);
+	//CAN.EnqueueTX(outFrame);
+	CAN.sendFrame(outFrame);
  }
 
 void timestamp()
