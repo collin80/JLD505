@@ -374,7 +374,7 @@ void CHADEMO::sendCANBattSpecs()
 	outFrame.data.byte[5] = highByte(settings.maxChargeVoltage); 
 	outFrame.data.byte[6] = (uint8_t)settings.packSizeKWH;
 	outFrame.data.byte[7] = 0; //not used
-	CAN.sendFrame(outFrame);
+	CAN.EnqueueTX(outFrame);
 	if (settings.debuggingLevel > 1)
 	{
 		Serial.print(F("CAR: Absolute MAX Voltage:"));
@@ -399,7 +399,7 @@ void CHADEMO::sendCANChargingTime()
 	outFrame.data.byte[5] = 0; //not used
 	outFrame.data.byte[6] = 0; //not used
 	outFrame.data.byte[7] = 0; //not used
-	CAN.sendFrame(outFrame);
+	CAN.EnqueueTX(outFrame);
 }
 
 void CHADEMO::sendCANStatus()
@@ -434,7 +434,7 @@ void CHADEMO::sendCANStatus()
 	outFrame.data.byte[5] = status;
 	outFrame.data.byte[6] = (uint8_t)settings.kiloWattHours;
 	outFrame.data.byte[7] = 0; //not used
-	CAN.sendFrame(outFrame);
+	CAN.EnqueueTX(outFrame);
 
 	if (settings.debuggingLevel > 1)
 	{

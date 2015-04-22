@@ -330,7 +330,7 @@ void CANBUS()
 	outFrame.data.byte[5] = lowByte((int)(settings.ampHours * 10)); // AmpHours Low Byte
 	outFrame.data.byte[6] = settings.capacity; // Not Used
 	outFrame.data.byte[7] = settings.SOC; // Not Used
-	CAN.sendFrame(outFrame);
+	CAN.EnqueueTX(outFrame);
   
 	outFrame.id = 0x505;
 	outFrame.length = 4;
@@ -344,7 +344,7 @@ void CANBUS()
 	outFrame.data.byte[5] = 0x00; // Not Used
 	outFrame.data.byte[6] = 0x00; // Not Used
 	outFrame.data.byte[7] = 0x00; // Not Used
-	CAN.sendFrame(outFrame);
+	CAN.EnqueueTX(outFrame);
  }
 
 void timestamp()
