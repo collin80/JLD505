@@ -260,15 +260,15 @@ void CHADEMO::doProcessing()
  	}
 }
 
-void CHADEMO::handleCANFrame(uint32_t ID, unsigned char *data)
+void CHADEMO::handleCANFrame(CAN_FRAME &frame)
 {
-	if (ID == EVSE_PARAMS_ID)
+	if (frame.id == EVSE_PARAMS_ID)
 	{
 		if (chademoState == WAIT_FOR_EVSE_PARAMS) setDelayedState(SET_CHARGE_BEGIN, 100);
-		evse_params.supportWeldCheck = data[0];
-		evse_params.availVoltage = data[1] + data[2] * 256;
-		evse_params.availCurrent = data[3];			
-		evse_params.thresholdVoltage = data[4] + data[5] * 256;
+		evse_params.supportWeldCheck = frame.data.byte[0];
+		evse_params.availVoltage = frame.data.byte[1] + frame.data.byte[2] * 256;
+		evse_params.availCurrent = frame.data.byte[3];			
+		evse_params.thresholdVoltage = frame.data.byte[4] + frame.data.byte[5] * 256;
 		if (settings.debuggingLevel > 1) 
 		{
 			Serial.print(F("EVSE: MaxVoltage: "));
@@ -300,19 +300,19 @@ void CHADEMO::handleCANFrame(uint32_t ID, unsigned char *data)
 		}
 	}
 
-	if (ID == EVSE_STATUS_ID)
+	if (frame.id == EVSE_STATUS_ID)
 	{
-		if (data[0] > 1) bChademo10Protocol = 1;
-		evse_status.presentVoltage = data[1] + 256 * data[2];
-		evse_status.presentCurrent  = data[3];
-		evse_status.status = data[5];				
-		if (data[6] < 0xFF)
+		if (frame.data.byte[0] > 1) bChademo10Protocol = 1;
+		evse_status.presentVoltage = frame.data.byte[1] + 256 * frame.data.byte[2];
+		evse_status.presentCurrent  = frame.data.byte[3];
+		evse_status.status = frame.data.byte[5];				
+		if (frame.data.byte[6] < 0xFF)
 		{
-			evse_status.remainingChargeSeconds = data[6] * 10;
+			evse_status.remainingChargeSeconds = frame.data.byte[6] * 10;
 		}
 		else 
 		{
-			evse_status.remainingChargeSeconds = data[7] * 60;
+			evse_status.remainingChargeSeconds = frame.data.byte[7] * 60;
 		}
 		if (settings.debuggingLevel > 1) 
 		{
@@ -362,19 +362,19 @@ void CHADEMO::handleCANFrame(uint32_t ID, unsigned char *data)
 
 void CHADEMO::sendCANBattSpecs()
 {	
-	uint32_t canMsgID;
-	unsigned char canMsg[8];
+	CAN_FRAME outFrame;
+	outFrame.id = CARSIDE_BATT_ID;
+	outFrame.length = 8;
 
-	canMsgID = CARSIDE_BATT_ID;
-	canMsg[0] = 0x00; // Not Used
-	canMsg[1] = 0x00; // Not Used
-	canMsg[2] = 0x00; // Not Used
-	canMsg[3] = 0x00; // Not Used
-	canMsg[4] = lowByte(settings.maxChargeVoltage);
-	canMsg[5] = highByte(settings.maxChargeVoltage); 
-	canMsg[6] = (uint8_t)settings.packSizeKWH;
-	canMsg[7] = 0; //not used
-	CAN.sendMsgBuf(canMsgID, 0, 8, canMsg);
+	outFrame.data.byte[0] = 0x00; // Not Used
+	outFrame.data.byte[1] = 0x00; // Not Used
+	outFrame.data.byte[2] = 0x00; // Not Used
+	outFrame.data.byte[3] = 0x00; // Not Used
+	outFrame.data.byte[4] = lowByte(settings.maxChargeVoltage);
+	outFrame.data.byte[5] = highByte(settings.maxChargeVoltage); 
+	outFrame.data.byte[6] = (uint8_t)settings.packSizeKWH;
+	outFrame.data.byte[7] = 0; //not used
+	CAN.sendFrame(outFrame);
 	if (settings.debuggingLevel > 1)
 	{
 		Serial.print(F("CAR: Absolute MAX Voltage:"));
@@ -387,27 +387,28 @@ void CHADEMO::sendCANBattSpecs()
 
 void CHADEMO::sendCANChargingTime()
 {
-	uint32_t canMsgID;
-	unsigned char canMsg[8];
+	CAN_FRAME outFrame;
+	outFrame.id = CARSIDE_CHARGETIME_ID;
+	outFrame.length = 8;
 
-	canMsgID = CARSIDE_CHARGETIME_ID;
-	canMsg[0] = 0x00; // Not Used
-	canMsg[1] = 0xFF; //not using 10 second increment mode
-	canMsg[2] = 90; //ask for how long of a charge? It will be forceably stopped if we hit this time
-	canMsg[3] = 60; //how long we think the charge will actually take
-	canMsg[4] = 0; //not used
-	canMsg[5] = 0; //not used
-	canMsg[6] = 0; //not used
-	canMsg[7] = 0; //not used
-	CAN.sendMsgBuf(canMsgID, 0, 8, canMsg);
+	outFrame.data.byte[0] = 0x00; // Not Used
+	outFrame.data.byte[1] = 0xFF; //not using 10 second increment mode
+	outFrame.data.byte[2] = 90; //ask for how long of a charge? It will be forceably stopped if we hit this time
+	outFrame.data.byte[3] = 60; //how long we think the charge will actually take
+	outFrame.data.byte[4] = 0; //not used
+	outFrame.data.byte[5] = 0; //not used
+	outFrame.data.byte[6] = 0; //not used
+	outFrame.data.byte[7] = 0; //not used
+	CAN.sendFrame(outFrame);
 }
 
 void CHADEMO::sendCANStatus()
 {
 	uint8_t faults = 0;
 	uint8_t status = 0;
-	uint32_t canMsgID;
-	unsigned char canMsg[8];
+	CAN_FRAME outFrame;
+	outFrame.id = CARSIDE_CONTROL_ID;
+	outFrame.length = 8;
 
 	if (carStatus.battOverTemp) faults |= CARSIDE_FAULT_OVERT;
 	if (carStatus.battOverVolt) faults |= CARSIDE_FAULT_OVERV;
@@ -424,22 +425,21 @@ void CHADEMO::sendCANStatus()
 		if (carStatus.stopRequest) status |= CARSIDE_STATUS_CHSTOP;
 	}
 
-	canMsgID = CARSIDE_CONTROL_ID;
-	if (bChademo10Protocol)	canMsg[0] = 2; //tell EVSE we are talking 1.0 protocol
-	else canMsg[0] = 1; //talking 0.9 protocol
-	canMsg[1] = lowByte(carStatus.targetVoltage);
-	canMsg[2] = highByte(carStatus.targetVoltage);
-	canMsg[3] = askingAmps;
-	canMsg[4] = faults;
-	canMsg[5] = status;
-	canMsg[6] = (uint8_t)settings.kiloWattHours;
-	canMsg[7] = 0; //not used
-	CAN.sendMsgBuf(canMsgID, 0, 8, canMsg);
+	if (bChademo10Protocol)	outFrame.data.byte[0] = 2; //tell EVSE we are talking 1.0 protocol
+	else outFrame.data.byte[0] = 1; //talking 0.9 protocol
+	outFrame.data.byte[1] = lowByte(carStatus.targetVoltage);
+	outFrame.data.byte[2] = highByte(carStatus.targetVoltage);
+	outFrame.data.byte[3] = askingAmps;
+	outFrame.data.byte[4] = faults;
+	outFrame.data.byte[5] = status;
+	outFrame.data.byte[6] = (uint8_t)settings.kiloWattHours;
+	outFrame.data.byte[7] = 0; //not used
+	CAN.sendFrame(outFrame);
 
 	if (settings.debuggingLevel > 1)
 	{
 		Serial.print(F("CAR: Protocol:"));
-		Serial.print(canMsg[0]);
+		Serial.print(outFrame.data.byte[0]);
 		Serial.print(F(" Target Voltage: "));
 		Serial.print(carStatus.targetVoltage);
 		Serial.print(F(" Current Command: "));

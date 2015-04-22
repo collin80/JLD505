@@ -64,7 +64,7 @@ EESettings settings;
 
 void MCP2515_ISR()
 {
-    Flag_Recv = 1;
+    CAN.handleInt();
 }
 
 void timer2Int()
@@ -162,6 +162,7 @@ void loop()
 	uint8_t pos;
 	CurrentMillis = millis();
 	uint8_t len;
+	CAN_FRAME inFrame;
 
 #ifdef DEBUG_TIMING
 	if (debugTick == 1)
@@ -206,11 +207,10 @@ void loop()
 		}
 	}
 
-	if (Flag_Recv || CAN.checkReceive() == CAN_MSGAVAIL) {
-		Flag_Recv = 0;		
-		CAN.readMsgBuf(&len, canMsg);            // read data,  len: data length, buf: data buf
-		canMsgID = CAN.getCanId();
-		chademo.handleCANFrame(canMsgID, canMsg);
+	if (CAN.GetRXFrame(inFrame)) {
+		//Serial.print("IN CAN: ");
+		//Serial.println(inFrame.id, HEX);
+		chademo.handleCANFrame(inFrame);
 	}
   
 	if (bStartConversion == 1)
@@ -317,31 +317,34 @@ void BT()
 
 void CANBUS()
 {
-	canMsgID = 0x404;
-        uint16_t currINT = abs(Current*10);
-	canMsg[0] = highByte((int)(Voltage * 10)); // Voltage High Byte
-	canMsg[1] = lowByte((int)(Voltage * 10)); // Voltage Low Byte
-	canMsg[2] = highByte(currINT); // Current High Byte
-	canMsg[3] = lowByte(currINT); // Current Low Byte
-	canMsg[4] = highByte((int)(settings.ampHours * 10)); // AmpHours High Byte
-	canMsg[5] = lowByte((int)(settings.ampHours * 10)); // AmpHours Low Byte
-	canMsg[6] = settings.capacity; // Not Used
-	canMsg[7] = settings.SOC; // Not Used
-	CAN.sendMsgBuf(canMsgID, 0, 8, canMsg);
+	CAN_FRAME outFrame;
+	outFrame.id = 0x404;
+	outFrame.length = 8;
 	
+    uint16_t currINT = abs(Current*10);
+	outFrame.data.byte[0] = highByte((int)(Voltage * 10)); // Voltage High Byte
+	outFrame.data.byte[1] = lowByte((int)(Voltage * 10)); // Voltage Low Byte
+	outFrame.data.byte[2] = highByte(currINT); // Current High Byte
+	outFrame.data.byte[3] = lowByte(currINT); // Current Low Byte
+	outFrame.data.byte[4] = highByte((int)(settings.ampHours * 10)); // AmpHours High Byte
+	outFrame.data.byte[5] = lowByte((int)(settings.ampHours * 10)); // AmpHours Low Byte
+	outFrame.data.byte[6] = settings.capacity; // Not Used
+	outFrame.data.byte[7] = settings.SOC; // Not Used
+	CAN.sendFrame(outFrame);
   
-	canMsgID = 0x505;
-        uint16_t Pwr=abs(Power*10);
-        uint16_t KWH=abs(settings.kiloWattHours *10);
-	canMsg[0] = highByte(Pwr); // Power High Byte
-	canMsg[1] = lowByte(Pwr); // Power Low Byte
-	canMsg[2] = highByte(KWH); // KiloWattHours High Byte
-	canMsg[3] = lowByte(KWH); // KiloWattHours Low Byte
-	canMsg[4] = 0x00; // Not Used
-	canMsg[5] = 0x00; // Not Used
-	canMsg[6] = 0x00; // Not Used
-	canMsg[7] = 0x00; // Not Used
-	CAN.sendMsgBuf(canMsgID, 0, 4, canMsg);
+	outFrame.id = 0x505;
+	outFrame.length = 4;
+    uint16_t Pwr=abs(Power*10);
+    uint16_t KWH=abs(settings.kiloWattHours *10);
+	outFrame.data.byte[0] = highByte(Pwr); // Power High Byte
+	outFrame.data.byte[1] = lowByte(Pwr); // Power Low Byte
+	outFrame.data.byte[2] = highByte(KWH); // KiloWattHours High Byte
+	outFrame.data.byte[3] = lowByte(KWH); // KiloWattHours Low Byte
+	outFrame.data.byte[4] = 0x00; // Not Used
+	outFrame.data.byte[5] = 0x00; // Not Used
+	outFrame.data.byte[6] = 0x00; // Not Used
+	outFrame.data.byte[7] = 0x00; // Not Used
+	CAN.sendFrame(outFrame);
  }
 
 void timestamp()
