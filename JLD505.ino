@@ -21,9 +21,6 @@ Notes on what needs to be done:
 - Interrupt driven CAN has a tendency to lock up. It has been disabled for now - It locks up even if the JLD is not sending anything
   but it seems to be able to actually send as much as you want. Only interrupt driven reception seems to make things die.
 
-- Some chargers seem to get mad if we ramp too quickly and it is lagging behind. So, check to see the current the EVSE is reporting and
-quit asking for more until it seems to catch up.
-
 Note about timing related code: The function millis() returns a 32 bit integer that specifies the # of milliseconds since last start up.
 That's all well and good but 4 billion milliseconds is a little less than 50 days. One might ask "so?" well, this could potentially run
 indefinitely in some vehicles and so would suffer rollover every 50 days. When this happens improper code will become stupid. So, try
