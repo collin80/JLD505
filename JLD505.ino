@@ -17,7 +17,6 @@ Notes on what needs to be done:
    almost 100ms! Minor change for test.
 - Investigate what changes are necessary to support the Cortex M0 processor in the Arduino Zero
 - Interrupt driven CAN has a tendency to lock up. It has been disabled for now
-- If the EVSE fails to transmit canbus frame this code is perfectly happy to act like nothing happened. That's got to be fixed.
 */
 
 //#define DEBUG_TIMING	//if this is defined you'll get time related debugging messages

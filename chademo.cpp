@@ -30,7 +30,8 @@ void CHADEMO::setDelayedState(int newstate, uint16_t delayTime)
 {
 	chademoState = LIMBO;
 	stateHolder = (CHADEMOSTATE)newstate;
-	stateMilli = millis() + delayTime;
+	stateMilli = millis();
+	stateDelay = delayTime;
 }
 
 CHADEMOSTATE CHADEMO::getState()
@@ -51,23 +52,13 @@ void CHADEMO::setTargetVoltage(uint16_t t_volt)
 //stuff that should be frequently run (as fast as possible)
 void CHADEMO::loop()
 {
-	if (!bDoMismatchChecks && chademoState == RUNNING)
-	{
-		if (CurrentMillis > mismatchStart) bDoMismatchChecks = 1;
-	}
-
-	if (chademoState == LIMBO && CurrentMillis > stateMilli)
-	{
-		chademoState = stateHolder;
-	}
-
 	if (!digitalRead(IN1)) //IN1 goes low if we have been plugged into the chademo port
 	{
 		if (insertionTime == 0)
 		{
 			insertionTime = millis();
 		}
-		else if (millis() > insertionTime + 500)
+		else if (millis() > (uint32_t)(insertionTime + 500))
 		{
 			if (bChademoMode == 0)
 			{
@@ -115,6 +106,17 @@ void CHADEMO::loop()
 
 	if (bChademoMode)
 	{
+
+		if (!bDoMismatchChecks && chademoState == RUNNING)
+		{
+			if ((CurrentMillis - mismatchStart) >= mismatchDelay) bDoMismatchChecks = 1;
+		}
+
+		if (chademoState == LIMBO && (CurrentMillis - stateMilli) >= stateDelay)
+		{
+			chademoState = stateHolder;
+		}
+
 		if (bChademoSendRequests && bChademoRequest)
 		{
 			bChademoRequest = 0;
@@ -214,6 +216,16 @@ void CHADEMO::loop()
 void CHADEMO::doProcessing()
 {
 	uint8_t tempCurrVal;
+
+	if ((CurrentMillis - lastCommTime) >= lastCommTime)
+	{
+		//this is BAD news. We can't do the normal cease current procedure because the EVSE seems to be unresponsive.
+		Serial.println(F("EVSE comm fault! Commencing emergency shutdown!"));
+		//yes, this isn't ideal - this will open the contactor and send the shutdown signal. It's better than letting the EVSE
+		//potentially run out of control.
+		chademoState = OPEN_CONTACTOR;
+	}
+
 	if (chademoState == RUNNING && bDoMismatchChecks)
 	{
 		if (abs(Voltage - evse_status.presentVoltage) > (evse_status.presentVoltage >> 3) && !carStatus.voltDeviation)
@@ -264,6 +276,7 @@ void CHADEMO::handleCANFrame(CAN_FRAME &frame)
 {
 	if (frame.id == EVSE_PARAMS_ID)
 	{
+		lastCommTime = millis();
 		if (chademoState == WAIT_FOR_EVSE_PARAMS) setDelayedState(SET_CHARGE_BEGIN, 100);
 		evse_params.supportWeldCheck = frame.data.byte[0];
 		evse_params.availVoltage = frame.data.byte[1] + frame.data.byte[2] * 256;
@@ -302,6 +315,7 @@ void CHADEMO::handleCANFrame(CAN_FRAME &frame)
 
 	if (frame.id == EVSE_STATUS_ID)
 	{
+		lastCommTime = millis();
 		if (frame.data.byte[0] > 1) bChademo10Protocol = 1;
 		evse_status.presentVoltage = frame.data.byte[1] + 256 * frame.data.byte[2];
 		evse_status.presentCurrent  = frame.data.byte[3];

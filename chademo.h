@@ -108,8 +108,12 @@ private:
 	uint8_t bListenEVSEStatus; //should we pay attention to stop requests and such yet?
 	uint8_t bDoMismatchChecks; //should we be checking for voltage and current mismatches?
 	uint32_t mismatchStart;
+	const uint16_t mismatchDelay = 10000; //don't start mismatch checks for 10 seconds
 	uint32_t stateMilli;
+	uint16_t stateDelay;
 	uint32_t insertionTime;
+	uint32_t lastCommTime;
+	const uint16_t lastCommTimeout = 1000; //allow up to 1 second of comm fault before getting angry
 
 	CHADEMOSTATE chademoState;
 	CHADEMOSTATE stateHolder;
