@@ -17,6 +17,16 @@ Notes on what needs to be done:
    almost 100ms! Minor change for test.
 - Investigate what changes are necessary to support the Cortex M0 processor in the Arduino Zero
 - Interrupt driven CAN has a tendency to lock up. It has been disabled for now
+
+
+Note about timing related code: The function millis() returns a 32 bit integer that specifies the # of milliseconds since last start up.
+That's all well and good but 4 billion milliseconds is a little less than 50 days. One might ask "so?" well, this could potentially run
+indefinitely in some vehicles and so would suffer rollover every 50 days. When this happens improper code will become stupid. So, try
+to implement any timing code like this:
+if ((millis() - someTimeStamp) >= SomeInterval) do stuff
+
+Such a code block will do the proper thing so long as all variables used are unsigned long / uint32_t variables.
+
 */
 
 //#define DEBUG_TIMING	//if this is defined you'll get time related debugging messages
