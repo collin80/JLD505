@@ -15,10 +15,14 @@
 Notes on what needs to be done:
 - Timing analysis showed that the USB, CANBUS, and BT routines take up entirely too much time. They can delay processing by
    almost 100ms! Minor change for test.
+
 - Investigate what changes are necessary to support the Cortex M0 processor in the Arduino Zero
+
 - Interrupt driven CAN has a tendency to lock up. It has been disabled for now - It locks up even if the JLD is not sending anything
   but it seems to be able to actually send as much as you want. Only interrupt driven reception seems to make things die.
 
+- Some chargers seem to get mad if we ramp too quickly and it is lagging behind. So, check to see the current the EVSE is reporting and
+quit asking for more until it seems to catch up.
 
 Note about timing related code: The function millis() returns a 32 bit integer that specifies the # of milliseconds since last start up.
 That's all well and good but 4 billion milliseconds is a little less than 50 days. One might ask "so?" well, this could potentially run
@@ -31,6 +35,7 @@ Such a code block will do the proper thing so long as all variables used are uns
 */
 
 //#define DEBUG_TIMING	//if this is defined you'll get time related debugging messages
+#define CHECK_FREE_RAM //if this is defined it does what it says - reports the lowest free RAM found at any point in the sketch
 
 template<class T> inline Print &operator <<(Print &obj, T arg) { obj.print(arg); return obj; } //Sets up serial streaming Serial<<someshit;
 
@@ -71,6 +76,10 @@ int32_t canMsgID = 0;
 unsigned char canMsg[8];
 unsigned char Flag_Recv = 0;
 volatile uint8_t debugTick = 0;
+
+#ifdef CHECK_FREE_RAM
+int16_t lowestFreeRAM = 2048;
+#endif
 
 EESettings settings;
 #define EEPROM_VALID	0xDE
@@ -218,6 +227,10 @@ void loop()
 				Serial.println(chademo.getState());
 			}
 			Save();
+#ifdef CHECK_FREE_RAM
+			Serial.print(F("Lowest free RAM: "));
+			Serial.println(lowestFreeRAM);
+#endif
 		}
 	}
 
@@ -251,6 +264,7 @@ void loop()
 			}
 		}
 	}
+	checkRAM();
 }
 
 void Save()
@@ -290,6 +304,7 @@ void USB()
 		Serial.println (settings.voltageCalibration, 5);   
     }
    while(Serial.available()>0) Serial.read();}
+  checkRAM();
 }
 
 void BT()
@@ -330,6 +345,7 @@ void BT()
 		}
 		while(BTSerial.available()>0) BTSerial.read();
 	}
+	checkRAM();
 }
 
 void CANBUS()
@@ -364,6 +380,8 @@ void CANBUS()
 	outFrame.data.byte[7] = 0x00; // Not Used
 	//CAN.EnqueueTX(outFrame);
 	CAN.sendFrame(outFrame);
+
+	checkRAM();
  }
 
 void timestamp()
@@ -382,3 +400,21 @@ void timestamp()
 	Serial.print(F("."));
 	Serial.println(milliseconds);    
 }
+
+#ifdef CHECK_FREE_RAM
+int freeRam () {
+  extern int __heap_start, *__brkval; 
+  int v; 
+  return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval); 
+}
+
+void inline checkRAM()
+{
+	int freeram = freeRam();
+	if (freeram < lowestFreeRAM) lowestFreeRAM = freeram;
+}
+#else
+void inline checkRAM() //define an empty copy. Since it is inline this should cause it to disappear.
+{
+}
+#endif

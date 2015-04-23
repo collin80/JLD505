@@ -6,6 +6,7 @@ chademo.cpp - Houses all chademo related functionality
 
 template<class T> inline Print &operator <<(Print &obj, T arg) { obj.print(arg); return obj; } //Sets up serial streaming Serial<<someshit;
 void timestamp();
+void inline checkRAM();
 
 CHADEMO::CHADEMO()
 {
@@ -210,6 +211,7 @@ void CHADEMO::loop()
 			break;
 		}
 	}
+	checkRAM();
 }
 
 //things that are less frequently run - run on a set schedule
@@ -270,6 +272,7 @@ void CHADEMO::doProcessing()
 			}
 		}
  	}
+	checkRAM();
 }
 
 void CHADEMO::handleCANFrame(CAN_FRAME &frame)
@@ -372,6 +375,7 @@ void CHADEMO::handleCANFrame(CAN_FRAME &frame)
 			}
 		}
 	}
+	checkRAM();
 }
 
 void CHADEMO::sendCANBattSpecs()
@@ -397,7 +401,8 @@ void CHADEMO::sendCANBattSpecs()
 		Serial.print(F(" Pack size: "));
 		Serial.print(settings.packSizeKWH);
 		timestamp();
-	}            
+	}          
+	checkRAM();
 }
 
 void CHADEMO::sendCANChargingTime()
@@ -416,6 +421,7 @@ void CHADEMO::sendCANChargingTime()
 	outFrame.data.byte[7] = 0; //not used
 	//CAN.EnqueueTX(outFrame);
 	CAN.sendFrame(outFrame);
+	checkRAM();
 }
 
 void CHADEMO::sendCANStatus()
@@ -479,6 +485,7 @@ void CHADEMO::sendCANStatus()
 	if (chademoState != RUNNING && askingAmps > 0) askingAmps--;
 	if (askingAmps > carStatus.targetCurrent) askingAmps--;
 	if (askingAmps > carStatus.targetCurrent) askingAmps--;
+	checkRAM();
 }
 
 CHADEMO chademo;
