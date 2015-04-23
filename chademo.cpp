@@ -217,7 +217,7 @@ void CHADEMO::doProcessing()
 {
 	uint8_t tempCurrVal;
 
-	if ((CurrentMillis - lastCommTime) >= lastCommTime)
+	if (chademoState == RUNNING && ((CurrentMillis - lastCommTime) >= lastCommTime))
 	{
 		//this is BAD news. We can't do the normal cease current procedure because the EVSE seems to be unresponsive.
 		Serial.println(F("EVSE comm fault! Commencing emergency shutdown!"));

@@ -16,7 +16,8 @@ Notes on what needs to be done:
 - Timing analysis showed that the USB, CANBUS, and BT routines take up entirely too much time. They can delay processing by
    almost 100ms! Minor change for test.
 - Investigate what changes are necessary to support the Cortex M0 processor in the Arduino Zero
-- Interrupt driven CAN has a tendency to lock up. It has been disabled for now
+- Interrupt driven CAN has a tendency to lock up. It has been disabled for now - It locks up even if the JLD is not sending anything
+  but it seems to be able to actually send as much as you want. Only interrupt driven reception seems to make things die.
 
 
 Note about timing related code: The function millis() returns a 32 bit integer that specifies the # of milliseconds since last start up.
