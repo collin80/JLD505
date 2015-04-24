@@ -255,9 +255,8 @@ void loop()
 			{
 				Serial.print(pos);
 				Serial.print(": ");
-				//sensors.isConnected(pos);
-				// Serial.println(sensors.getCelsius(pos));
-				Serial.println(sensors.getTempCByIndex(pos));
+				sensors.readSensor(pos);
+				Serial.println(sensors.getTempC(pos));
 			}
 		}
 	}
