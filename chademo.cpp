@@ -50,6 +50,16 @@ void CHADEMO::setTargetVoltage(uint16_t t_volt)
 	carStatus.targetVoltage = t_volt;
 }
 
+void CHADEMO::setChargingFault()
+{
+	carStatus.chargingFault = 1;
+}
+
+void CHADEMO::setBattOverTemp()
+{
+	carStatus.battOverTemp = 1;
+}
+
 //stuff that should be frequently run (as fast as possible)
 void CHADEMO::loop()
 {

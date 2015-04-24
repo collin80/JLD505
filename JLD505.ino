@@ -32,7 +32,7 @@ Such a code block will do the proper thing so long as all variables used are uns
 */
 
 //#define DEBUG_TIMING	//if this is defined you'll get time related debugging messages
-#define CHECK_FREE_RAM //if this is defined it does what it says - reports the lowest free RAM found at any point in the sketch
+//#define CHECK_FREE_RAM //if this is defined it does what it says - reports the lowest free RAM found at any point in the sketch
 
 template<class T> inline Print &operator <<(Print &obj, T arg) { obj.print(arg); return obj; } //Sets up serial streaming Serial<<someshit;
 
@@ -74,9 +74,7 @@ unsigned char canMsg[8];
 unsigned char Flag_Recv = 0;
 volatile uint8_t debugTick = 0;
 
-#ifdef CHECK_FREE_RAM
 int16_t lowestFreeRAM = 2048;
-#endif
 
 EESettings settings;
 #define EEPROM_VALID	0xDE
@@ -183,6 +181,7 @@ void loop()
 	CurrentMillis = millis();
 	uint8_t len;
 	CAN_FRAME inFrame;
+	float tempReading;
 
 #ifdef DEBUG_TIMING
 	if (debugTick == 1)
@@ -251,13 +250,28 @@ void loop()
 		pos = sensorReadPosition;
 		if (pos < tempSensorCount)
 		{		  
+			sensors.readSensor(pos);
+			tempReading = sensors.getTempC(pos); 
+
+			if (chademo.bChademoMode && tempReading > 50.0f)
+			{
+				Serial.println(F("Over temperature at battery pack! Aborting the charge!"));
+				chademo.setBattOverTemp();
+				chademo.setDelayedState(CEASE_CURRENT, 10);
+			}
+			if (chademo.bChademoMode && tempReading < -5.0f)
+			{
+				Serial.println(F("Too cold to charge! Aborting the charge!"));
+				chademo.setChargingFault(); //there is no under temp fault so we go generic
+				chademo.setDelayedState(CEASE_CURRENT, 10);
+			}
+
 			if (settings.debuggingLevel > 0)
 			{
 				Serial.print(F("  Temp sensor:"));
 				Serial.print(pos);
 				Serial.print(": ");
-				sensors.readSensor(pos);
-				Serial.print(sensors.getTempC(pos));
+				Serial.print(tempReading);
 				Serial.print("/");
 				Serial.print(sensors.getMinTempC(pos));
 				Serial.print("/");
@@ -411,7 +425,6 @@ void timestamp()
 	Serial.println(milliseconds);    
 }
 
-#ifdef CHECK_FREE_RAM
 int freeRam () {
   extern int __heap_start, *__brkval; 
   int v; 
@@ -423,8 +436,3 @@ void inline checkRAM()
 	int freeram = freeRam();
 	if (freeram < lowestFreeRAM) lowestFreeRAM = freeram;
 }
-#else
-void inline checkRAM() //define an empty copy. Since it is inline this should cause it to disappear.
-{
-}
-#endif
