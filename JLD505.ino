@@ -253,6 +253,7 @@ void loop()
 		{		  
 			if (settings.debuggingLevel > 0)
 			{
+				Serial.print(F("  Temp sensor:"));
 				Serial.print(pos);
 				Serial.print(": ");
 				sensors.readSensor(pos);
@@ -276,37 +277,44 @@ void Save()
 
 void USB()
 {
-  Serial.print (Voltage, 3);   
-  Serial.print ("V ");
-  Serial.print (Current, 2);    
-  Serial.print ("A ");
-  Serial.print (settings.ampHours, 1);    
-  Serial.print ("Ah ");
-  Serial.print (Power, 1);        
-  Serial.print ("kW ");
-  Serial.print (settings.kiloWattHours, 1);    
-  Serial.println ("kWh");
-  if (Serial.available() > 0)
-  {Command = Serial.read();
-   if (Command == 'z')
-     {
-      Serial.println("Reset Ah & Wh");
-	  settings.ampHours = 0.0;
-	  settings.kiloWattHours = 0.0;
-      Serial.println("Done!!!"); 
-    }
-     if (Command == '+')
-     {
-		settings.voltageCalibration +=0.004;
-		Serial.println (settings.voltageCalibration, 5);   
-    }
-     if (Command == '-')
-     {
-		settings.voltageCalibration -=0.004;
-		Serial.println (settings.voltageCalibration, 5);   
-    }
-   while(Serial.available()>0) Serial.read();}
-  checkRAM();
+	Serial.print ("JLD505: ");
+	Serial.print (Voltage, 3);   
+	Serial.print ("v ");
+	Serial.print (Current, 2);    
+	Serial.print ("A ");
+	Serial.print (settings.ampHours, 1);    
+	Serial.print ("Ah ");
+	Serial.print (Power, 1);        
+	Serial.print ("kW ");
+	Serial.print (settings.kiloWattHours, 1);    
+	Serial.print ("kWh ");
+	Serial.print (settings.SOC, 1);    
+	Serial.println ("% SOC");  
+
+
+	if (Serial.available() > 0)
+	{
+		Command = Serial.read();
+		if (Command == 'z')
+		{
+			Serial.println("Reset Ah & Wh");
+			settings.ampHours = 0.0;
+			settings.kiloWattHours = 0.0;
+			Serial.println("Done!!!"); 
+		}
+		if (Command == '+')
+		{
+			settings.voltageCalibration +=0.004;
+			Serial.println (settings.voltageCalibration, 5);   
+		}
+		if (Command == '-')
+		{
+			settings.voltageCalibration -=0.004;
+			Serial.println (settings.voltageCalibration, 5);   
+		}
+		while(Serial.available()>0) Serial.read();
+	}
+	checkRAM();
 }
 
 void BT()
@@ -369,17 +377,17 @@ void CANBUS()
 	CAN.sendFrame(outFrame);
   
 	outFrame.id = 0x505;
-	outFrame.length = 4;
+	outFrame.length = 8;
     uint16_t Pwr=abs(Power*10);
     uint16_t KWH=abs(settings.kiloWattHours *10);
 	outFrame.data.byte[0] = highByte(Pwr); // Power High Byte
 	outFrame.data.byte[1] = lowByte(Pwr); // Power Low Byte
 	outFrame.data.byte[2] = highByte(KWH); // KiloWattHours High Byte
 	outFrame.data.byte[3] = lowByte(KWH); // KiloWattHours Low Byte
-	outFrame.data.byte[4] = 0x00; // Not Used
-	outFrame.data.byte[5] = 0x00; // Not Used
-	outFrame.data.byte[6] = 0x00; // Not Used
-	outFrame.data.byte[7] = 0x00; // Not Used
+	outFrame.data.byte[4] = (sensors.getTempC(0))+40;
+	outFrame.data.byte[5] = (sensors.getTempC(1))+40;
+	outFrame.data.byte[6] = (sensors.getTempC(2))+40;
+	outFrame.data.byte[7] = (sensors.getTempC(3))+40;
 	//CAN.EnqueueTX(outFrame);
 	CAN.sendFrame(outFrame);
 
