@@ -256,7 +256,13 @@ void loop()
 				Serial.print(pos);
 				Serial.print(": ");
 				sensors.readSensor(pos);
-				Serial.println(sensors.getTempC(pos));
+				Serial.print(sensors.getTempC(pos));
+				Serial.print("/");
+				Serial.print(sensors.getMinTempC(pos));
+				Serial.print("/");
+				Serial.print(sensors.getMaxTempC(pos));
+				Serial.print("/");
+				Serial.println(sensors.getAvgTempC(pos));
 			}
 		}
 	}
