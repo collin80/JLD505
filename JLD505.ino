@@ -231,7 +231,7 @@ void loop()
 	}
 
 	//if (CAN.GetRXFrame(inFrame)) {
-	if (Flag_Recv == 1) {
+	if (Flag_Recv || (CAN.checkReceive() == CAN_MSGAVAIL)) {
 		Flag_Recv = 0;
 		CAN.receiveFrame(inFrame);
 		//Serial.print("IN CAN: ");
