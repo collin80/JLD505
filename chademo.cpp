@@ -174,7 +174,7 @@ void CHADEMO::loop()
 			carStatus.contactorOpen = 0; //its closed now
 			carStatus.chargingEnabled = 1; //please sir, I'd like some charge
 			bStartedCharge = 1;
-			mismatchStart = millis() + 10000; //start mismatch checks 10 seconds after we start the charge			
+			mismatchStart = millis();
 			break;
 		case RUNNING:
 			//do processing here by taking our measured voltage, amperage, and SOC to see if we should be commanding something
@@ -488,12 +488,12 @@ void CHADEMO::sendCANStatus()
 		timestamp();
 	}
 
-	if (chademoState == RUNNING &&  askingAmps < carStatus.targetCurrent) 
+	if (chademoState == RUNNING && askingAmps < carStatus.targetCurrent) 
 	{
 		int offsetError = askingAmps - evse_status.presentCurrent;
 		uint8_t allowableOffset = askingAmps / 8;
 		if (allowableOffset < 2) allowableOffset = 2;
-		if (offsetError <= allowableOffset) askingAmps++;
+		if ((offsetError <= allowableOffset) || (evse_status.presentCurrent == 0)) askingAmps++;
 	}
 	//not a typo. We're allowed to change requested amps by +/- 20A per second. We send the above frame every 100ms so a single
 	//increment means we can ramp up 10A per second. But, we want to ramp down quickly if there is a problem so do two which

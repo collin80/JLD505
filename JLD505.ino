@@ -255,15 +255,15 @@ void loop()
 
 			if (chademo.bChademoMode && tempReading > 50.0f)
 			{
-				Serial.println(F("Over temperature at battery pack! Aborting the charge!"));
-				chademo.setBattOverTemp();
-				chademo.setDelayedState(CEASE_CURRENT, 10);
+				//Serial.println(F("Over temperature at battery pack! Aborting the charge!"));
+				//chademo.setBattOverTemp();
+				//chademo.setDelayedState(CEASE_CURRENT, 10);
 			}
 			if (chademo.bChademoMode && tempReading < -5.0f)
 			{
-				Serial.println(F("Too cold to charge! Aborting the charge!"));
-				chademo.setChargingFault(); //there is no under temp fault so we go generic
-				chademo.setDelayedState(CEASE_CURRENT, 10);
+				//Serial.println(F("Too cold to charge! Aborting the charge!"));
+				//chademo.setChargingFault(); //there is no under temp fault so we go generic
+				//chademo.setDelayedState(CEASE_CURRENT, 10);
 			}
 
 			if (settings.debuggingLevel > 0)
