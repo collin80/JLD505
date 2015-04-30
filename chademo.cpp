@@ -490,10 +490,9 @@ void CHADEMO::sendCANStatus()
 
 	if (chademoState == RUNNING && askingAmps < carStatus.targetCurrent) 
 	{
+		if (askingAmps == 0) askingAmps = 3;
 		int offsetError = askingAmps - evse_status.presentCurrent;
-		uint8_t allowableOffset = askingAmps / 8;
-		if (allowableOffset < 2) allowableOffset = 2;
-		if ((offsetError <= allowableOffset) || (evse_status.presentCurrent == 0)) askingAmps++;
+		if ((offsetError <= 1) || (evse_status.presentCurrent == 0)) askingAmps++;
 	}
 	//not a typo. We're allowed to change requested amps by +/- 20A per second. We send the above frame every 100ms so a single
 	//increment means we can ramp up 10A per second. But, we want to ramp down quickly if there is a problem so do two which
