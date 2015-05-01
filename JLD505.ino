@@ -260,12 +260,13 @@ void loop()
 			sensors.readSensor(pos);
 			tempReading = sensors.getTempC(pos); 
 
-			if (chademo.bChademoMode && sensors.isFaulted(pos))
+			/*if (chademo.bChademoMode && sensors.isFaulted(pos))
 			{
 				Serial.println(F("Temperature fault! Aborting charge!"));
 				chademo.setBattOverTemp();
 				chademo.setDelayedState(CEASE_CURRENT, 10);
 			}
+			*/
 
 			if (settings.debuggingLevel > 0)
 			{
