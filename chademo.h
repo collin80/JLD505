@@ -113,6 +113,7 @@ private:
 	uint8_t cMismatchCount; //same but for current
 	uint8_t vCapCount; //# of EVSE voltage capacity checks that have failed in a row.
 	uint8_t vOverFault; //over volt fault counter like above.
+	uint8_t faultCount; //force faults to count up a bit before we actually fault.
 	uint32_t mismatchStart;
 	const uint16_t mismatchDelay = 10000; //don't start mismatch checks for 10 seconds
 	uint32_t stateMilli;

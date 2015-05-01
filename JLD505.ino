@@ -218,9 +218,10 @@ void loop()
 		{
 			Count = 0;
 			USB();												
-			CANBUS();							
+			
 			if (!chademo.bChademoMode) //save some processor time by not doing these in chademo mode
 			{					
+				CANBUS();							
 				BT();
 			}
 			else if (settings.debuggingLevel > 0) 

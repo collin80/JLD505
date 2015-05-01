@@ -240,38 +240,6 @@ void CHADEMO::doProcessing()
 
 	if (chademoState == RUNNING && bDoMismatchChecks)
 	{
-		if (abs(Voltage - evse_status.presentVoltage) > (evse_status.presentVoltage >> 3) && !carStatus.voltDeviation)
-		{
-			vMismatchCount++;
-			if (vMismatchCount > 9)
-			{
-				Serial.print(F("Voltage mismatch! Aborting! Reported: "));
-				Serial.print(evse_status.presentVoltage);
-				Serial.print(F(" Measured: "));
-				Serial.println(Voltage);
-				carStatus.voltDeviation = 1;
-				chademoState = CEASE_CURRENT;
-			}
-		}
-		else vMismatchCount = 0;
-
-		tempCurrVal = evse_status.presentCurrent >> 3;
-		if (tempCurrVal < 3) tempCurrVal = 3;
-		if (abs((Current * -1.0) - evse_status.presentCurrent) > tempCurrVal && !carStatus.currDeviation)
-		{
-			cMismatchCount++;
-			if (cMismatchCount > 9)
-			{
-				Serial.print(F("Current mismatch! Aborting! Reported: "));
-				Serial.print(evse_status.presentCurrent);
-				Serial.print(F(" Measured: "));
-				Serial.println(Current * -1.0);
-				carStatus.currDeviation = 1;
-				chademoState = CEASE_CURRENT;
-			}
-		}
-		else cMismatchCount = 0;
-
 		if (Voltage > settings.maxChargeVoltage && !carStatus.battOverVolt)
 		{
 			vOverFault++;
@@ -308,6 +276,8 @@ void CHADEMO::doProcessing()
 
 void CHADEMO::handleCANFrame(CAN_FRAME &frame)
 {
+	uint8_t tempCurrVal;
+
 	if (frame.id == EVSE_PARAMS_ID)
 	{
 		lastCommTime = millis();
@@ -367,6 +337,39 @@ void CHADEMO::handleCANFrame(CAN_FRAME &frame)
 		{
 			evse_status.remainingChargeSeconds = frame.data.byte[7] * 60;
 		}
+
+		if (abs(Voltage - evse_status.presentVoltage) > (evse_status.presentVoltage >> 3) && !carStatus.voltDeviation)
+		{
+			vMismatchCount++;
+			if (vMismatchCount > 4)
+			{
+				Serial.print(F("Voltage mismatch! Aborting! Reported: "));
+				Serial.print(evse_status.presentVoltage);
+				Serial.print(F(" Measured: "));
+				Serial.println(Voltage);
+				carStatus.voltDeviation = 1;
+				chademoState = CEASE_CURRENT;
+			}
+		}
+		else vMismatchCount = 0;
+
+		tempCurrVal = evse_status.presentCurrent >> 3;
+		if (tempCurrVal < 3) tempCurrVal = 3;
+		if (abs((Current * -1.0) - evse_status.presentCurrent) > tempCurrVal && !carStatus.currDeviation)
+		{
+			cMismatchCount++;
+			if (cMismatchCount > 4)
+			{
+				Serial.print(F("Current mismatch! Aborting! Reported: "));
+				Serial.print(evse_status.presentCurrent);
+				Serial.print(F(" Measured: "));
+				Serial.println(Current * -1.0);
+				carStatus.currDeviation = 1;
+				chademoState = CEASE_CURRENT;
+			}
+		}
+		else cMismatchCount = 0;
+
 		if (settings.debuggingLevel > 1) 
 		{
 			Serial.print(F("EVSE: Measured Voltage: "));
@@ -383,9 +386,16 @@ void CHADEMO::handleCANFrame(CAN_FRAME &frame)
 		//on fault try to turn off current immediately and cease operation
 		if ((evse_status.status & 0x1A) != 0) //if bits 1, 3, or 4 are set then we have a problem.
 		{
-			Serial.println(F("EVSE:fault! Abort."));
-			if (chademoState == RUNNING) chademoState = CEASE_CURRENT;
+			faultCount++;
+			if (faultCount > 3)
+			{
+				Serial.print(F("EVSE:fault code "));
+				Serial.print(evse_status.status);
+				Serial.println(F(" Abort."));
+				if (chademoState == RUNNING) chademoState = CEASE_CURRENT;
+			}
 		}
+		else faultCount = 0;
 			
 		if (chademoState == RUNNING)
 		{
