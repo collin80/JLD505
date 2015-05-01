@@ -242,32 +242,47 @@ void CHADEMO::doProcessing()
 	{
 		if (abs(Voltage - evse_status.presentVoltage) > (evse_status.presentVoltage >> 3) && !carStatus.voltDeviation)
 		{
-			Serial.print(F("Voltage mismatch! Aborting! Reported: "));
-			Serial.print(evse_status.presentVoltage);
-			Serial.print(F(" Measured: "));
-			Serial.println(Voltage);
-			carStatus.voltDeviation = 1;
-			chademoState = CEASE_CURRENT;
+			vMismatchCount++;
+			if (vMismatchCount > 9)
+			{
+				Serial.print(F("Voltage mismatch! Aborting! Reported: "));
+				Serial.print(evse_status.presentVoltage);
+				Serial.print(F(" Measured: "));
+				Serial.println(Voltage);
+				carStatus.voltDeviation = 1;
+				chademoState = CEASE_CURRENT;
+			}
 		}
+		else vMismatchCount = 0;
 
 		tempCurrVal = evse_status.presentCurrent >> 3;
 		if (tempCurrVal < 3) tempCurrVal = 3;
 		if (abs((Current * -1.0) - evse_status.presentCurrent) > tempCurrVal && !carStatus.currDeviation)
 		{
-			Serial.print(F("Current mismatch! Aborting! Reported: "));
-			Serial.print(evse_status.presentCurrent);
-			Serial.print(F(" Measured: "));
-			Serial.println(Current * -1.0);
-			carStatus.currDeviation = 1;
-			chademoState = CEASE_CURRENT;
+			cMismatchCount++;
+			if (cMismatchCount > 9)
+			{
+				Serial.print(F("Current mismatch! Aborting! Reported: "));
+				Serial.print(evse_status.presentCurrent);
+				Serial.print(F(" Measured: "));
+				Serial.println(Current * -1.0);
+				carStatus.currDeviation = 1;
+				chademoState = CEASE_CURRENT;
+			}
 		}
+		else cMismatchCount = 0;
 
-		if (Voltage > settings.maxChargeVoltage)
+		if (Voltage > settings.maxChargeVoltage && !carStatus.battOverVolt)
 		{
-			Serial.println(F("Over voltage fault!"));
-			carStatus.battOverVolt = 1;
-			chademoState = CEASE_CURRENT;
+			vOverFault++;
+			if (vOverFault > 9)
+			{
+				Serial.println(F("Over voltage fault!"));
+				carStatus.battOverVolt = 1;
+				chademoState = CEASE_CURRENT;
+			}
 		}
+		else vOverFault = 0;
 
 		//Constant Current/Constant Voltage Taper checks.  If minimum current is set to zero, we terminate once target voltage is reached.
 		//If not zero, we will adjust current up or down as needed to maintain voltage until current decreases to the minimum entered
@@ -313,12 +328,17 @@ void CHADEMO::handleCANFrame(CAN_FRAME &frame)
 		}
 		
 		//if charger cannot provide our requested voltage then GTFO
-		if (evse_params.availVoltage < carStatus.targetVoltage)
+		if (evse_params.availVoltage < carStatus.targetVoltage && chademoState <= RUNNING)
 		{
-			Serial.print(F("EVSE can't provide needed voltage. Aborting."));
-			Serial.println(evse_params.availVoltage);
-			chademoState = CEASE_CURRENT;
+			vCapCount++;
+			if (vCapCount > 9)
+			{
+				Serial.print(F("EVSE can't provide needed voltage. Aborting."));
+				Serial.println(evse_params.availVoltage);
+				chademoState = CEASE_CURRENT;
+			}
 		}
+		else vCapCount = 0;
 
 		//if we want more current then it can provide then revise our request to match max output
 		if (evse_params.availCurrent < carStatus.targetCurrent) carStatus.targetCurrent = evse_params.availCurrent;

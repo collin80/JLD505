@@ -109,6 +109,10 @@ private:
 	uint8_t askingAmps; //how many amps to ask for. Trends toward targetAmperage
 	uint8_t bListenEVSEStatus; //should we pay attention to stop requests and such yet?
 	uint8_t bDoMismatchChecks; //should we be checking for voltage and current mismatches?
+	uint8_t vMismatchCount; //count # of consecutive voltage mismatches. Don't trigger until we get enough
+	uint8_t cMismatchCount; //same but for current
+	uint8_t vCapCount; //# of EVSE voltage capacity checks that have failed in a row.
+	uint8_t vOverFault; //over volt fault counter like above.
 	uint32_t mismatchStart;
 	const uint16_t mismatchDelay = 10000; //don't start mismatch checks for 10 seconds
 	uint32_t stateMilli;
