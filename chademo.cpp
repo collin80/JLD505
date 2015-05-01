@@ -242,7 +242,10 @@ void CHADEMO::doProcessing()
 	{
 		if (abs(Voltage - evse_status.presentVoltage) > (evse_status.presentVoltage >> 3) && !carStatus.voltDeviation)
 		{
-			Serial.println(F("Voltage mismatch! Aborting!"));
+			Serial.print(F("Voltage mismatch! Aborting! Reported: "));
+			Serial.print(evse_status.presentVoltage);
+			Serial.print(F(" Measured: "));
+			Serial.println(Voltage);
 			carStatus.voltDeviation = 1;
 			chademoState = CEASE_CURRENT;
 		}
@@ -251,7 +254,10 @@ void CHADEMO::doProcessing()
 		if (tempCurrVal < 3) tempCurrVal = 3;
 		if (abs((Current * -1.0) - evse_status.presentCurrent) > tempCurrVal && !carStatus.currDeviation)
 		{
-			Serial.println(F("Current mismatch! Aborting!"));
+			Serial.print(F("Current mismatch! Aborting! Reported: "));
+			Serial.print(evse_status.presentCurrent);
+			Serial.print(F(" Measured: "));
+			Serial.println(Current * -1.0);
 			carStatus.currDeviation = 1;
 			chademoState = CEASE_CURRENT;
 		}
