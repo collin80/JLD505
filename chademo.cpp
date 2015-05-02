@@ -338,37 +338,40 @@ void CHADEMO::handleCANFrame(CAN_FRAME &frame)
 			evse_status.remainingChargeSeconds = frame.data.byte[7] * 60;
 		}
 
-		if (abs(Voltage - evse_status.presentVoltage) > (evse_status.presentVoltage >> 3) && !carStatus.voltDeviation)
+		if (chademoState == RUNNING && bDoMismatchChecks)
 		{
-			vMismatchCount++;
-			if (vMismatchCount > 4)
+			if (abs(Voltage - evse_status.presentVoltage) > (evse_status.presentVoltage >> 3) && !carStatus.voltDeviation)
 			{
-				Serial.print(F("Voltage mismatch! Aborting! Reported: "));
-				Serial.print(evse_status.presentVoltage);
-				Serial.print(F(" Measured: "));
-				Serial.println(Voltage);
-				carStatus.voltDeviation = 1;
-				chademoState = CEASE_CURRENT;
+				vMismatchCount++;
+				if (vMismatchCount > 4)
+				{
+					Serial.print(F("Voltage mismatch! Aborting! Reported: "));
+					Serial.print(evse_status.presentVoltage);
+					Serial.print(F(" Measured: "));
+					Serial.println(Voltage);
+					carStatus.voltDeviation = 1;
+					chademoState = CEASE_CURRENT;
+				}
 			}
-		}
-		else vMismatchCount = 0;
+			else vMismatchCount = 0;
 
-		tempCurrVal = evse_status.presentCurrent >> 3;
-		if (tempCurrVal < 3) tempCurrVal = 3;
-		if (abs((Current * -1.0) - evse_status.presentCurrent) > tempCurrVal && !carStatus.currDeviation)
-		{
-			cMismatchCount++;
-			if (cMismatchCount > 4)
+			tempCurrVal = evse_status.presentCurrent >> 3;
+			if (tempCurrVal < 3) tempCurrVal = 3;
+			if (abs((Current * -1.0) - evse_status.presentCurrent) > tempCurrVal && !carStatus.currDeviation)
 			{
-				Serial.print(F("Current mismatch! Aborting! Reported: "));
-				Serial.print(evse_status.presentCurrent);
-				Serial.print(F(" Measured: "));
-				Serial.println(Current * -1.0);
-				carStatus.currDeviation = 1;
-				chademoState = CEASE_CURRENT;
+				cMismatchCount++;
+				if (cMismatchCount > 4)
+				{
+					Serial.print(F("Current mismatch! Aborting! Reported: "));
+					Serial.print(evse_status.presentCurrent);
+					Serial.print(F(" Measured: "));
+					Serial.println(Current * -1.0);
+					carStatus.currDeviation = 1;
+					chademoState = CEASE_CURRENT;
+				}
 			}
+			else cMismatchCount = 0;
 		}
-		else cMismatchCount = 0;
 
 		if (settings.debuggingLevel > 1) 
 		{
