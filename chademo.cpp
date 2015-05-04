@@ -257,7 +257,7 @@ void CHADEMO::doProcessing()
                 
 		if(Count==20)
 		{
-			if (Voltage > settings.targetChargeVoltage-1) //All initializations complete and we're running.We've reached charging target
+			if (evse_status.presentVoltage > settings.targetChargeVoltage-1) //All initializations complete and we're running.We've reached charging target
             {
 				settings.SOC=100;
 				settings.ampHours=0;
