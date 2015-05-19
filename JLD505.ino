@@ -67,6 +67,7 @@ volatile uint8_t bStartConversion = 0;
 volatile uint8_t bGetTemperature = 0;
 volatile uint8_t timerIntCounter = 0;
 volatile uint8_t timerFastCounter  = 0;
+volatile uint8_t timerChademoCounter = 0;
 volatile uint8_t sensorReadPosition = 255;
 uint8_t tempSensorCount = 0;
 int32_t canMsgID = 0;
@@ -88,10 +89,16 @@ void MCP2515_ISR()
 void timer2Int()
 {
 	timerFastCounter++;
+	timerChademoCounter++;
+	if (timerChademoCounter >= 3)
+	{
+		timerChademoCounter = 0;
+		if (chademo.bChademoMode  && chademo.bChademoSendRequests) chademo.bChademoRequest = 1;
+	}
+
 	if (timerFastCounter == 8)
 	{
-		debugTick = 1;
-		if (chademo.bChademoMode  && chademo.bChademoSendRequests) chademo.bChademoRequest = 1;
+		debugTick = 1;		
 		timerFastCounter = 0;
 		timerIntCounter++;
 		if (timerIntCounter < 10)
@@ -246,10 +253,12 @@ void loop()
 		chademo.handleCANFrame(inFrame);
 	}
   
+	//digitalWrite(OUT1, HIGH);
+
 	if (bStartConversion == 1)
 	{
 		bStartConversion = 0;
-		sensors.requestTemperatures();
+		//sensors.requestTemperatures();
 	}
 	if (bGetTemperature)
 	{
@@ -257,8 +266,8 @@ void loop()
 		pos = sensorReadPosition;
 		if (pos < tempSensorCount)
 		{		  
-			sensors.readSensor(pos);
-			tempReading = sensors.getTempC(pos); 
+			//sensors.readSensor(pos);
+			//tempReading = sensors.getTempC(pos); 
 
 			/*if (chademo.bChademoMode && sensors.isFaulted(pos))
 			{
@@ -267,7 +276,7 @@ void loop()
 				chademo.setDelayedState(CEASE_CURRENT, 10);
 			}
 			*/
-
+			/*
 			if (settings.debuggingLevel > 0)
 			{
 				Serial.print(F("  Temp sensor:"));
@@ -280,10 +289,11 @@ void loop()
 				Serial.print(sensors.getMaxTempC(pos));
 				Serial.print("/");
 				Serial.println(sensors.getAvgTempC(pos));
-			}
+			}*/
 		}
 	}
 	checkRAM();
+	//digitalWrite(OUT1, LOW);
 }
 
 void Save()

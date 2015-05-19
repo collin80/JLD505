@@ -63,6 +63,7 @@ void CHADEMO::setBattOverTemp()
 //stuff that should be frequently run (as fast as possible)
 void CHADEMO::loop()
 {
+	static byte frameRotate;
 	if (!digitalRead(IN1)) //IN1 goes low if we have been plugged into the chademo port
 	{
 		if (insertionTime == 0)
@@ -131,9 +132,20 @@ void CHADEMO::loop()
 		if (bChademoSendRequests && bChademoRequest)
 		{
 			bChademoRequest = 0;
-			sendCANStatus();
-			sendCANBattSpecs();
-			sendCANChargingTime();
+			frameRotate++;
+			frameRotate %= 3;
+			switch (frameRotate)
+			{
+			case 0:
+				sendCANStatus();
+				break;
+			case 1:
+				sendCANBattSpecs();
+				break;
+			case 2:
+				sendCANChargingTime();
+				break;
+			}
 			if (settings.debuggingLevel > 1) Serial.println("Tx");
 		}
 
