@@ -90,7 +90,7 @@ void timer2Int()
 {
 	timerFastCounter++;
 	timerChademoCounter++;
-	if (timerChademoCounter >= 3)
+	if (timerChademoCounter >= 8)
 	{
 		timerChademoCounter = 0;
 		if (chademo.bChademoMode  && chademo.bChademoSendRequests) chademo.bChademoRequest = 1;
