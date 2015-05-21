@@ -140,10 +140,10 @@ void CHADEMO::loop()
 				sendCANStatus();
 				break;
 			case 1:
-				if (chademoState != RUNNING) sendCANBattSpecs();
+				sendCANBattSpecs();
 				break;
 			case 2:
-				if (chademoState != RUNNING) sendCANChargingTime();
+				sendCANChargingTime();
 				break;
 			}
 			if (settings.debuggingLevel > 1) Serial.println("Tx");
