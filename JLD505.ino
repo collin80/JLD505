@@ -389,6 +389,9 @@ void CANBUS()
 	CAN_FRAME outFrame;
 	outFrame.id = 0x404;
 	outFrame.length = 8;
+	outFrame.priority = 2;
+	outFrame.rtr = 0;
+	outFrame.extended = 0;
 	
     uint16_t currINT = abs(Current*10);
 	outFrame.data.byte[0] = highByte((int)(Voltage * 10)); // Voltage High Byte

@@ -444,6 +444,9 @@ void CHADEMO::sendCANBattSpecs()
 	CAN_FRAME outFrame;
 	outFrame.id = CARSIDE_BATT_ID;
 	outFrame.length = 8;
+	outFrame.rtr = 0;
+	outFrame.priority = 2;
+	outFrame.extended = 0;
 
 	outFrame.data.byte[0] = 0x00; // Not Used
 	outFrame.data.byte[1] = 0x00; // Not Used
@@ -470,6 +473,9 @@ void CHADEMO::sendCANChargingTime()
 {
 	CAN_FRAME outFrame;
 	outFrame.id = CARSIDE_CHARGETIME_ID;
+	outFrame.rtr = 0;
+	outFrame.priority = 2;
+	outFrame.extended = 0;
 	outFrame.length = 8;
 
 	outFrame.data.byte[0] = 0x00; // Not Used
@@ -492,6 +498,9 @@ void CHADEMO::sendCANStatus()
 	CAN_FRAME outFrame;
 	outFrame.id = CARSIDE_CONTROL_ID;
 	outFrame.length = 8;
+	outFrame.rtr = 0;
+	outFrame.priority = 2;
+	outFrame.extended = 0;
 
 	if (carStatus.battOverTemp) faults |= CARSIDE_FAULT_OVERT;
 	if (carStatus.battOverVolt) faults |= CARSIDE_FAULT_OVERV;
